@@ -66,7 +66,7 @@
     .shell {
       position: relative;
       z-index: 2;
-      min-height: 200vh;
+      min-height: 300vh;
     }
 
     .hero {
@@ -75,6 +75,8 @@
       display: grid;
       grid-template-rows: auto 1fr auto;
       padding: clamp(22px, 4vw, 44px) clamp(20px, 5vw, 72px) clamp(24px, 4vw, 40px);
+      position: sticky;
+      top: 0;
     }
 
     .top,
@@ -184,6 +186,33 @@
     .divider.topline { margin-bottom: 34px; animation-delay: 0.55s; }
     .divider.bottomline { margin-top: 34px; animation-delay: 1.05s; }
 
+    .stack {
+      position: relative;
+      min-height: clamp(190px, 25vw, 360px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .panel {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transform: translateY(18px);
+      transition: opacity 0.55s ease, transform 0.55s ease;
+      pointer-events: none;
+    }
+
+    .panel.active {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
     .headline {
       margin: 0;
       font-family: 'Playfair Display', serif;
@@ -195,70 +224,23 @@
       text-wrap: balance;
     }
 
-    .headline .line {
-      display: block;
-      opacity: 0;
-      transform: translateY(20px);
-      animation: fadeUp 1.05s cubic-bezier(.16,1,.3,1) forwards;
-    }
-
-    .headline .line.one { animation-delay: 0.7s; }
-    .headline .line.two {
+    .headline.gold {
       color: var(--gold);
-      margin-top: 0.28em;
-      letter-spacing: 0.05em;
-      transition: opacity 0.6s ease, transform 0.6s ease;
-      animation: none;
-      opacity: 0;
-      transform: translateY(28px);
       text-shadow: 0 0 18px rgba(199,163,106,0.08);
     }
 
-    .headline.revealed .line.two {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    .scroll-cue {
-      margin-top: 18px;
-      font-family: 'Inconsolata', monospace;
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      font-size: clamp(9px, 0.75vw, 11px);
-      color: rgba(199,163,106,0.5);
-      opacity: 0;
-      transform: translateY(8px);
-      transition: opacity 0.35s ease, transform 0.35s ease;
-      animation: fadeUp 0.9s ease 1.1s forwards;
-    }
-
-    .headline.revealed + .scroll-cue {
-      opacity: 0;
-      transform: translateY(-4px);
-      pointer-events: none;
-    }
-
     .tagline {
-      margin-top: 28px;
+      margin: 0;
       font-family: 'Inconsolata', monospace;
       text-transform: none;
       letter-spacing: 0.08em;
       font-size: clamp(12px, 1vw, 16px);
       color: var(--gold-soft);
-      opacity: 0;
-      transform: translateY(14px);
-      transition: opacity 0.6s ease, transform 0.6s ease;
-    }
-
-    .headline.revealed ~ .tagline {
-      opacity: 1;
-      transform: translateY(0);
-      transition-delay: 0.12s;
     }
 
     .spacer {
-      height: 100vh;
-      height: 100dvh;
+      height: 220vh;
+      height: 220dvh;
     }
 
     @keyframes fadeUp {
@@ -302,10 +284,6 @@
         letter-spacing: 0.04em;
       }
 
-      .headline .line.two {
-        margin-top: 0.36em;
-      }
-
       .divider {
         height: 38px;
       }
@@ -324,12 +302,11 @@
         height: 18px;
       }
 
-      .scroll-cue {
-        margin-top: 16px;
+      .stack {
+        min-height: 160px;
       }
 
       .tagline {
-        margin-top: 22px;
         font-size: 12px;
       }
     }
@@ -350,13 +327,17 @@
       <section class="center" aria-label="Hero">
         <div class="divider topline"></div>
 
-        <h1 class="headline" id="headline">
-          <span class="line one">We Know Something</span>
-          <span class="line two">You Don&apos;t</span>
-        </h1>
-
-        <div class="scroll-cue" id="scrollCue">Scroll</div>
-        <div class="tagline">Selective Capital</div>
+        <div class="stack" id="stack">
+          <div class="panel active" id="stage1">
+            <h1 class="headline">We Know Something</h1>
+          </div>
+          <div class="panel" id="stage2">
+            <h1 class="headline gold">You Don&apos;t</h1>
+          </div>
+          <div class="panel" id="stage3">
+            <div class="tagline">Selective Capital</div>
+          </div>
+        </div>
 
         <div class="divider bottomline"></div>
       </section>
@@ -371,19 +352,33 @@
   </div>
 
   <script>
-    const headline = document.getElementById('headline');
-    const revealAt = 80;
+    const stage1 = document.getElementById('stage1');
+    const stage2 = document.getElementById('stage2');
+    const stage3 = document.getElementById('stage3');
 
-    function updateReveal() {
-      if (window.scrollY >= revealAt) {
-        headline.classList.add('revealed');
+    const stageTwoAt = 140;
+    const stageThreeAt = 340;
+
+    function showStage(which) {
+      stage1.classList.toggle('active', which === 1);
+      stage2.classList.toggle('active', which === 2);
+      stage3.classList.toggle('active', which === 3);
+    }
+
+    function updateStages() {
+      const y = window.scrollY;
+
+      if (y >= stageThreeAt) {
+        showStage(3);
+      } else if (y >= stageTwoAt) {
+        showStage(2);
       } else {
-        headline.classList.remove('revealed');
+        showStage(1);
       }
     }
 
-    updateReveal();
-    window.addEventListener('scroll', updateReveal, { passive: true });
+    updateStages();
+    window.addEventListener('scroll', updateStages, { passive: true });
   </script>
 </body>
 </html>
