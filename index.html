@@ -4,181 +4,101 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Corgi Capital</title>
-  <meta name="description" content="Corgi Capital" />
+  <meta name="description" content="Selective Capital" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inconsolata:wght@300;400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Inconsolata:wght@300;400&family=Libre+Baskerville:ital,wght@1,400&display=swap" rel="stylesheet">
   <style>
     :root {
-      --black: #0b0b0b;
-      --ivory: #f4efe5;
-      --gold: #d3ad63;
-      --gold-soft: #c59b49;
-      --gold-dim: rgba(211, 173, 99, 0.66);
-      --gold-line: rgba(211, 173, 99, 0.30);
-      --edge-shadow: rgba(0, 0, 0, 0.12);
-      --transition: 620ms cubic-bezier(.16,1,.3,1);
+      --black:    #0b0b0b;
+      --ivory:    #f0ece0;
+      --gold:     #c9a55a;
+      --gold-dim: rgba(201,165,90,0.55);
+      --gold-line:rgba(201,165,90,0.22);
+      --trans:    600ms cubic-bezier(.16,1,.3,1);
     }
 
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body {
-      margin: 0;
+    html {
       height: 100%;
-      overflow: hidden;
-      background: var(--black);
-      color: var(--ivory);
+      scroll-snap-type: y mandatory;
+      overflow-y: scroll;
+      overflow-x: hidden;
+      scrollbar-width: none;
     }
+    html::-webkit-scrollbar { display: none; }
 
     body {
-      font-family: 'Playfair Display', serif;
+      min-height: 100%;
+      background: var(--black);
+      color: var(--ivory);
+      font-family: 'Cormorant Garamond', Georgia, serif;
       -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
-      background:
-        radial-gradient(circle at 50% 40%, rgba(255,255,255,0.025), transparent 36%),
-        linear-gradient(180deg, rgba(255,255,255,0.014), rgba(255,255,255,0) 38%),
-        var(--black);
-      position: relative;
     }
 
-    body::after {
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background: radial-gradient(circle at center, transparent 54%, var(--edge-shadow) 100%);
-      z-index: 0;
-    }
-
+    /* ── corners ── */
     .corner {
       position: fixed;
-      width: 24px;
-      height: 24px;
-      z-index: 4;
+      width: 20px; height: 20px;
+      z-index: 10;
       opacity: 0;
-      animation: fadeIn 0.9s ease 0.8s forwards;
+      animation: fadeIn 1s ease 1s forwards;
     }
+    .c-tl { top: 18px; left: 18px;   border-top: 1px solid var(--gold-line); border-left:  1px solid var(--gold-line); }
+    .c-tr { top: 18px; right: 18px;  border-top: 1px solid var(--gold-line); border-right: 1px solid var(--gold-line); }
+    .c-bl { bottom: 18px; left: 18px;  border-bottom: 1px solid var(--gold-line); border-left:  1px solid var(--gold-line); }
+    .c-br { bottom: 18px; right: 18px; border-bottom: 1px solid var(--gold-line); border-right: 1px solid var(--gold-line); }
 
-    .c-tl { top: 16px; left: 16px; border-top: 1px solid var(--gold-line); border-left: 1px solid var(--gold-line); }
-    .c-tr { top: 16px; right: 16px; border-top: 1px solid var(--gold-line); border-right: 1px solid var(--gold-line); }
-    .c-bl { bottom: 16px; left: 16px; border-bottom: 1px solid var(--gold-line); border-left: 1px solid var(--gold-line); }
-    .c-br { bottom: 16px; right: 16px; border-bottom: 1px solid var(--gold-line); border-right: 1px solid var(--gold-line); }
-
-    .hero {
-      position: relative;
-      z-index: 2;
-      min-height: 100vh;
-      min-height: 100dvh;
+    /* ── sections ── */
+    .section {
+      scroll-snap-align: start;
+      height: 100vh;
+      height: 100dvh;
       display: grid;
       grid-template-rows: auto 1fr auto;
-      padding: clamp(22px, 4vw, 44px) clamp(20px, 5vw, 72px) clamp(24px, 4vw, 40px);
+      padding: clamp(24px, 4vw, 48px) clamp(32px, 6vw, 80px);
+      position: relative;
     }
 
-    .top,
-    .bottom {
+    /* ── top bar ── */
+    .top {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 16px;
       font-family: 'Inconsolata', monospace;
       text-transform: uppercase;
-      letter-spacing: 0.18em;
-      font-size: clamp(9px, 0.8vw, 12px);
+      letter-spacing: 0.2em;
+      font-size: clamp(9px, 0.78vw, 11px);
       color: var(--gold-dim);
       opacity: 0;
-      animation: fadeUp 0.95s cubic-bezier(.16,1,.3,1) forwards;
+      animation: fadeUp 1s cubic-bezier(.16,1,.3,1) 0.15s forwards;
     }
 
-    .top { animation-delay: 0.12s; }
-    .bottom { align-items: flex-end; animation-delay: 0.24s; }
+    .wordmark { color: var(--gold); letter-spacing: 0.24em; }
 
-    .wordmark,
-    .meta,
-    .contact {
-      position: relative;
-    }
-
-    .wordmark {
-      color: var(--gold);
-      letter-spacing: 0.22em;
-      white-space: nowrap;
-    }
-
-    .meta {
-      line-height: 1.85;
-      white-space: nowrap;
-    }
-
-    .contact {
-      color: var(--gold-dim);
-      text-decoration: none;
-      padding-bottom: 4px;
-      white-space: nowrap;
-      transition: color 0.25s ease;
-    }
-
-    .contact::after {
-      content: "";
-      position: absolute;
-      left: 0;
-      bottom: 0;
-      width: 0;
-      height: 1px;
-      background: var(--gold);
-      transition: width 0.35s cubic-bezier(.16,1,.3,1);
-    }
-
-    .contact:hover { color: var(--gold); }
-    .contact:hover::after { width: 100%; }
-
-    .wordmark:hover::after,
-    .meta:hover::after,
-    .contact:hover::before {
-      content: "🐾";
-      position: absolute;
-      font-size: 11px;
-      line-height: 1;
-    }
-
-    .wordmark:hover::after {
-      margin-left: 7px;
-      top: 0;
-    }
-
-    .meta:hover::after {
-      margin-left: 8px;
-      bottom: 2px;
-    }
-
-    .contact:hover::before {
-      left: -18px;
-      top: 1px;
-    }
-
+    /* ── center ── */
     .center {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       text-align: center;
-      transform: translateY(-5vh);
-      min-width: 0;
+      transform: translateY(-3vh);
     }
 
     .divider {
       width: 1px;
-      height: 48px;
-      background: linear-gradient(to bottom, transparent, rgba(211,173,99,0.9), transparent);
-      opacity: 0;
-      animation: fadeIn 0.9s ease forwards;
+      height: 0;
+      background: linear-gradient(to bottom, transparent, rgba(201,165,90,0.7), transparent);
+      animation: growLine 1s cubic-bezier(.16,1,.3,1) forwards;
     }
-
-    .divider.topline { margin-bottom: 34px; animation-delay: 0.45s; }
-    .divider.bottomline { margin-top: 34px; animation-delay: 0.95s; }
+    .divider.topline    { margin-bottom: 36px; animation-delay: 0.5s; }
+    .divider.bottomline { margin-top: 36px;    animation-delay: 1.1s; }
 
     .stack {
       position: relative;
-      min-height: clamp(170px, 24vw, 320px);
+      min-height: clamp(140px, 22vw, 300px);
       width: 100%;
       display: grid;
       place-items: center;
@@ -191,221 +111,339 @@
       align-items: center;
       justify-content: center;
       opacity: 0;
-      transform: translateY(16px) scale(0.985);
-      transition:
-        opacity var(--transition),
-        transform var(--transition);
+      transform: translateY(14px);
+      transition: opacity var(--trans), transform var(--trans);
       pointer-events: none;
     }
-
     .panel.active {
       opacity: 1;
-      transform: translateY(0) scale(1);
+      transform: translateY(0);
+      pointer-events: auto;
     }
 
+    /* ── headline ── */
     .headline {
       margin: 0;
-      font-family: 'Playfair Display', serif;
-      font-size: clamp(56px, 9.2vw, 150px);
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: clamp(54px, 9vw, 148px);
       font-weight: 600;
-      line-height: 0.92;
-      letter-spacing: 0.045em;
+      line-height: 0.9;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      text-wrap: balance;
     }
 
     .headline.gold {
+      font-family: 'Libre Baskerville', Georgia, serif;
+      font-weight: 400;
+      font-style: italic;
+      text-transform: none;
+      letter-spacing: 0.01em;
       color: var(--gold);
-      text-shadow: 0 0 24px rgba(211,173,99,0.12);
+      font-size: clamp(50px, 8.5vw, 138px);
     }
 
-    .tagline {
-      margin: 0;
+    /* ── bottom bar ── */
+    .bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
       font-family: 'Inconsolata', monospace;
-      font-size: clamp(12px, 1vw, 16px);
-      letter-spacing: 0.08em;
-      color: var(--gold-soft);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: clamp(9px, 0.78vw, 11px);
+      color: var(--gold-dim);
+      opacity: 0;
+      animation: fadeUp 1s cubic-bezier(.16,1,.3,1) 0.25s forwards;
     }
 
+    .meta { line-height: 1.9; }
+
+    .contact {
+      color: var(--gold-dim);
+      text-decoration: none;
+      padding-bottom: 2px;
+      position: relative;
+      transition: color 0.25s ease;
+    }
+    .contact::after {
+      content: "";
+      position: absolute;
+      left: 0; bottom: 0;
+      width: 0; height: 1px;
+      background: var(--gold);
+      transition: width 0.4s cubic-bezier(.16,1,.3,1);
+    }
+    .contact:hover { color: var(--gold); }
+    .contact:hover::after { width: 100%; }
+
+    /* ── scroll hint ── */
+    .scroll-hint {
+      position: absolute;
+      bottom: clamp(30px, 4vw, 52px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 1px;
+      height: 24px;
+      background: linear-gradient(to bottom, var(--gold-dim), transparent);
+      opacity: 0;
+      animation: fadeIn 1s ease 2.4s forwards, arrowPulse 2.2s ease-in-out 2.4s infinite;
+    }
+
+    /* ── section 2 ── */
+    .section-2 .center { transform: none; }
+
+    .pillars {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: clamp(28px, 5vw, 80px);
+      width: 100%;
+      max-width: 860px;
+    }
+
+    .pillar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      opacity: 0;
+      transform: translateY(18px);
+    }
+    .pillar.visible { animation: fadeUp 0.9s cubic-bezier(.16,1,.3,1) forwards; }
+    .pillar:nth-child(1) { animation-delay: 0.05s; }
+    .pillar:nth-child(3) { animation-delay: 0.2s; }
+    .pillar:nth-child(5) { animation-delay: 0.35s; }
+
+    .pillar-line {
+      width: 1px; height: 28px;
+      background: linear-gradient(to bottom, var(--gold-line), transparent);
+    }
+
+    .pillar-title {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: clamp(24px, 3.2vw, 46px);
+      font-weight: 400;
+      line-height: 1.05;
+      text-align: center;
+      color: var(--ivory);
+    }
+
+    .pillar-desc {
+      font-family: 'Inconsolata', monospace;
+      font-size: clamp(9px, 0.72vw, 11px);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      text-align: center;
+      line-height: 1.75;
+    }
+
+    .pillar-sep {
+      width: 1px; height: 72px;
+      background: var(--gold-line);
+      align-self: center; flex-shrink: 0;
+    }
+
+    /* ── keyframes ── */
     @keyframes fadeUp {
-      from {
-        opacity: 0;
-        transform: translateY(18px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
-
     @keyframes fadeIn {
       from { opacity: 0; }
-      to { opacity: 0.82; }
+      to   { opacity: 0.75; }
+    }
+    @keyframes growLine {
+      to { height: 48px; }
+    }
+    @keyframes arrowPulse {
+      0%, 100% { opacity: 0.55; transform: translateX(-50%) scaleY(1); }
+      50%       { opacity: 0.15; transform: translateX(-50%) scaleY(0.5); }
+    }
+
+    /* ── mobile ── */
+    @media (max-width: 640px) {
+      .section { padding: 28px 32px; }
+      .center  { transform: none; }
+      .headline { font-size: clamp(44px, 13.5vw, 74px); line-height: 0.93; }
+      .divider.topline    { margin-bottom: 24px; }
+      .divider.bottomline { margin-top: 24px; }
+      .stack { min-height: clamp(110px, 40vw, 180px); }
+
+      .pillars { flex-direction: column; align-items: center; gap: 24px; }
+      .pillar-sep { width: 36px; height: 1px; }
+      .pillar-title { font-size: clamp(30px, 8vw, 44px); }
+
+      .corner { width: 14px; height: 14px; }
     }
 
     @media (min-width: 1440px) {
-      .center { transform: translateY(-6vh); }
-      .headline { font-size: min(9vw, 160px); }
-    }
-
-    @media (max-width: 900px) {
-      .center { transform: translateY(-2vh); }
-      .headline { font-size: clamp(48px, 10.8vw, 106px); }
-      .stack { min-height: 160px; }
-    }
-
-    @media (max-width: 640px) {
-      .hero {
-        padding: 22px 18px 24px;
-      }
-
-      .center { transform: none; }
-
-      .headline {
-        font-size: clamp(40px, 12.6vw, 74px);
-        line-height: 0.95;
-        letter-spacing: 0.04em;
-      }
-
-      .divider {
-        height: 38px;
-      }
-
-      .divider.topline { margin-bottom: 24px; }
-      .divider.bottomline { margin-top: 24px; }
-
-      .top,
-      .bottom {
-        letter-spacing: 0.14em;
-        font-size: 9px;
-      }
-
-      .corner {
-        width: 18px;
-        height: 18px;
-      }
-
-      .stack { min-height: 132px; }
-
-      .tagline { font-size: 12px; }
+      .headline { font-size: min(8.5vw, 155px); }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      * {
-        animation: none !important;
-        transition-duration: 0ms !important;
-        scroll-behavior: auto !important;
-      }
-      .top, .bottom, .corner, .divider { opacity: 1 !important; transform: none !important; }
+      * { animation: none !important; transition-duration: 0ms !important; }
+      .top, .bottom, .corner { opacity: 1 !important; transform: none !important; }
+      .divider { height: 48px !important; }
       .panel { opacity: 0; transform: none; }
       .panel.active { opacity: 1; }
+      .pillar { opacity: 1; transform: none; }
     }
   </style>
 </head>
 <body>
+
   <div class="corner c-tl"></div>
   <div class="corner c-tr"></div>
   <div class="corner c-bl"></div>
   <div class="corner c-br"></div>
 
-  <main class="hero">
+  <!-- Section 1 -->
+  <section class="section section-1" id="hero">
     <header class="top">
       <div class="wordmark">Corgi Capital</div>
     </header>
 
-    <section class="center" aria-label="Hero">
+    <div class="center">
       <div class="divider topline"></div>
-
       <div class="stack" aria-live="polite">
         <div class="panel active" id="stage1">
-          <h1 class="headline">We Know Something</h1>
+          <h1 class="headline">We Know<br>Something</h1>
         </div>
         <div class="panel" id="stage2">
-          <h1 class="headline gold">You Don&apos;t</h1>
-        </div>
-        <div class="panel" id="stage3">
-          <div class="tagline">Selective Capital</div>
+          <h1 class="headline gold">You Don't.</h1>
         </div>
       </div>
-
       <div class="divider bottomline"></div>
-    </section>
+    </div>
 
     <footer class="bottom">
       <div class="meta">40.7128° N<br>74.0060° W</div>
       <a class="contact" href="mailto:hello@corgi-capital.com">hello@corgi-capital.com</a>
     </footer>
-  </main>
+
+    <div class="scroll-hint" aria-hidden="true"></div>
+  </section>
+
+  <!-- Section 2 -->
+  <section class="section section-2" id="pillars">
+    <div class="top" style="animation-delay:0s;">
+      <div class="wordmark">Corgi Capital</div>
+    </div>
+
+    <div class="center">
+      <div class="pillars">
+        <div class="pillar">
+          <div class="pillar-line"></div>
+          <div class="pillar-title">Selective<br>Capital</div>
+          <div class="pillar-desc">Conviction-driven.<br>Position size follows<br>edge, not formula.</div>
+        </div>
+
+        <div class="pillar-sep"></div>
+
+        <div class="pillar">
+          <div class="pillar-line"></div>
+          <div class="pillar-title">Data<br>Beyond Data</div>
+          <div class="pillar-desc">Signal where<br>others see noise.</div>
+        </div>
+
+        <div class="pillar-sep"></div>
+
+        <div class="pillar">
+          <div class="pillar-line"></div>
+          <div class="pillar-title">Intangible<br>Edge</div>
+          <div class="pillar-desc">Markets price facts.<br>We price<br>what's next.</div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="bottom" style="animation-delay:0s;">
+      <div class="meta">40.7128° N<br>74.0060° W</div>
+      <a class="contact" href="mailto:hello@corgi-capital.com">hello@corgi-capital.com</a>
+    </footer>
+  </section>
 
   <script>
     const stages = [
       document.getElementById('stage1'),
       document.getElementById('stage2'),
-      document.getElementById('stage3')
     ];
+    let current = 0;
+    let stageAnimating = false;
 
-    let currentStage = 0;
-    let animating = false;
-    let touchStartY = null;
+    function showStage(i) {
+      stages.forEach((el, idx) => el.classList.toggle('active', idx === i));
+    }
 
-    function renderStage(index) {
-      stages.forEach((el, i) => {
-        el.classList.toggle('active', i === index);
+    function advanceStage(dir) {
+      if (stageAnimating) return false;
+      const next = current + dir;
+      if (next < 0 || next >= stages.length) return false;
+      stageAnimating = true;
+      current = next;
+      showStage(current);
+      setTimeout(() => { stageAnimating = false; }, 700);
+      return true;
+    }
+
+    let activeSection = 'hero';
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return;
+        activeSection = e.target.id;
+        if (e.target.id === 'pillars') {
+          document.querySelectorAll('.pillar').forEach(p => p.classList.add('visible'));
+        }
+        // reset hero stages when scrolling back up
+        if (e.target.id === 'hero') {
+          current = 0;
+          showStage(0);
+        }
       });
-    }
+    }, { threshold: 0.55 });
 
-    function goToStage(nextIndex) {
-      if (nextIndex < 0 || nextIndex >= stages.length || nextIndex === currentStage || animating) {
-        return;
-      }
-      animating = true;
-      currentStage = nextIndex;
-      renderStage(currentStage);
-      window.setTimeout(() => {
-        animating = false;
-      }, 700);
-    }
+    observer.observe(document.getElementById('hero'));
+    observer.observe(document.getElementById('pillars'));
 
-    function handleStep(direction) {
-      if (direction > 0) {
-        goToStage(currentStage + 1);
-      } else if (direction < 0) {
-        goToStage(currentStage - 1);
-      }
-    }
-
-    window.addEventListener('wheel', (event) => {
-      event.preventDefault();
-      if (Math.abs(event.deltaY) < 8) return;
-      handleStep(event.deltaY);
+    window.addEventListener('wheel', (e) => {
+      if (activeSection !== 'hero') return;
+      const dir = e.deltaY > 0 ? 1 : -1;
+      if (dir > 0 && current < stages.length - 1) { e.preventDefault(); advanceStage(1); return; }
+      if (dir < 0 && current > 0)                  { e.preventDefault(); advanceStage(-1); return; }
     }, { passive: false });
 
-    window.addEventListener('keydown', (event) => {
-      if (['ArrowDown', 'PageDown', 'Space'].includes(event.key)) {
-        event.preventDefault();
-        handleStep(1);
+    let touchStartY = null;
+    window.addEventListener('touchstart', (e) => {
+      touchStartY = e.touches[0]?.clientY ?? null;
+    }, { passive: true });
+
+    window.addEventListener('touchend', (e) => {
+      if (touchStartY === null) return;
+      const delta = touchStartY - (e.changedTouches[0]?.clientY ?? touchStartY);
+      touchStartY = null;
+      if (Math.abs(delta) < 28) return;
+      const dir = delta > 0 ? 1 : -1;
+      if (activeSection === 'hero') {
+        if (dir > 0 && current < stages.length - 1) { advanceStage(1); return; }
+        if (dir < 0 && current > 0)                  { advanceStage(-1); return; }
       }
-      if (['ArrowUp', 'PageUp'].includes(event.key)) {
-        event.preventDefault();
-        handleStep(-1);
+    }, { passive: true });
+
+    window.addEventListener('keydown', (e) => {
+      if (['ArrowDown','PageDown','Space'].includes(e.key)) {
+        e.preventDefault();
+        if (activeSection === 'hero' && current < stages.length - 1) { advanceStage(1); return; }
+        document.getElementById('pillars').scrollIntoView({ behavior: 'smooth' });
+      }
+      if (['ArrowUp','PageUp'].includes(e.key)) {
+        e.preventDefault();
+        if (activeSection === 'hero' && current > 0) { advanceStage(-1); return; }
+        if (activeSection === 'pillars') document.getElementById('hero').scrollIntoView({ behavior: 'smooth' });
       }
     });
 
-    window.addEventListener('touchstart', (event) => {
-      if (!event.touches.length) return;
-      touchStartY = event.touches[0].clientY;
-    }, { passive: true });
-
-    window.addEventListener('touchend', (event) => {
-      if (touchStartY === null || !event.changedTouches.length) return;
-      const delta = touchStartY - event.changedTouches[0].clientY;
-      if (Math.abs(delta) > 24) {
-        handleStep(delta);
-      }
-      touchStartY = null;
-    }, { passive: true });
-
-    renderStage(currentStage);
+    showStage(0);
   </script>
 </body>
 </html>
