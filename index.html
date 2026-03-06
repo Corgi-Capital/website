@@ -1,360 +1,292 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Corgi Capital</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Inconsolata:wght@300;400&display=swap" rel="stylesheet" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Corgi Capital</title>
 
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Inconsolata:wght@300;400&display=swap" rel="stylesheet">
 
-    :root {
-      --ink:   #08090b;
-      --paper: #f0ece2;
-      --gold:  #c9a96e;
-      --dim:   #6b6456;
-      --rule:  rgba(201,169,110,0.2);
-    }
+<style>
 
-    html, body {
-      height: 100%;
-      background: var(--ink);
-      color: var(--paper);
-      font-family: 'Cormorant Garamond', Georgia, serif;
-      overflow: hidden;
-    }
+:root{
+--black:#0b0b0b;
+--ivory:#f3efe6;
+--gold:#c7a36a;
+--gold-soft:#a88952;
+--gold-dim:rgba(199,163,106,.55);
+--gold-line:rgba(199,163,106,.28);
+}
 
-    @supports (height: 100dvh) {
-      html, body { height: 100dvh; }
-    }
+*{box-sizing:border-box}
 
-    /* ── canvas background ── */
-    #bg {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-    }
+html,body{
+margin:0;
+background:var(--black);
+color:var(--ivory);
+font-family:"Cormorant Garamond",serif;
+-webkit-font-smoothing:antialiased;
+overflow-x:hidden;
+}
 
-    /* ── noise grain ── */
-    .grain {
-      position: fixed; inset: 0; z-index: 1;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-      opacity: 0.045;
-      pointer-events: none;
-    }
+/* warm dark background */
+body{
+background:
+radial-gradient(circle at 50% 40%,rgba(255,255,255,.035),transparent 38%),
+linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,0) 40%),
+var(--black);
+}
 
-    /* ── paintbrush edge ── */
-    .edge {
-      position: fixed; inset: 0; z-index: 2;
-      pointer-events: none;
-      box-shadow:
-        inset 0   0   160px 60px rgba(8,9,11,0.98),
-        inset 0   0   80px  20px rgba(8,9,11,0.75),
-        inset 0   0   30px  6px  rgba(8,9,11,0.4);
-      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='3' seed='8'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='18' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23r)' fill='white'/%3E%3C/svg%3E");
-      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='3' seed='8'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='18' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23r)' fill='white'/%3E%3C/svg%3E");
-    }
+body:after{
+content:"";
+position:fixed;
+inset:0;
+pointer-events:none;
+background:radial-gradient(circle at center,transparent 50%,rgba(0,0,0,.12) 100%);
+}
 
-    /* ── layout ── */
-    .stage {
-      position: relative; z-index: 3;
-      height: 100vh;
-      height: 100dvh;
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      padding: clamp(28px, 5vw, 60px) clamp(28px, 6vw, 72px);
-    }
+.stage{
+min-height:100vh;
+display:grid;
+grid-template-rows:auto 1fr auto;
+padding:clamp(22px,4vw,48px) clamp(20px,5vw,72px);
+position:relative;
+z-index:2;
+}
 
-    /* ── top bar ── */
-    .top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      opacity: 0;
-      animation: fadeUp 1s cubic-bezier(.16,1,.3,1) 0.3s forwards;
-    }
+/* header */
 
-    .wordmark {
-      font-size: clamp(10px, 1vw, 13px);
-      font-family: 'Inconsolata', monospace;
-      font-weight: 300;
-      letter-spacing: 0.26em;
-      text-transform: uppercase;
-      color: var(--gold);
-    }
+.top,.bottom{
+display:flex;
+justify-content:space-between;
+align-items:flex-start;
+font-family:"Inconsolata",monospace;
+text-transform:uppercase;
+letter-spacing:.22em;
+font-size:clamp(9px,.8vw,12px);
+color:var(--gold-dim);
+animation:fadeUp 1s ease forwards;
+opacity:0;
+}
 
-    .badge {
-      font-family: 'Inconsolata', monospace;
-      font-size: clamp(8px, 0.78vw, 10px);
-      font-weight: 300;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--dim);
-      border: 1px solid rgba(184,150,90,0.18);
-      padding: 4px 11px 4px 9px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+.bottom{
+align-items:flex-end;
+animation-delay:1.2s;
+}
 
-    .badge-dot {
-      width: 4px; height: 4px;
-      border-radius: 50%;
-      background: var(--gold);
-      animation: blink 3s ease-in-out infinite;
-      flex-shrink: 0;
-    }
+.wordmark{
+color:var(--gold);
+letter-spacing:.22em;
+position:relative;
+}
 
-    /* ── center ── */
-    .center {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-    }
+.meta{
+line-height:1.8;
+position:relative;
+}
 
-    .divider {
-      width: 1px;
-      background: linear-gradient(to bottom, transparent, var(--gold), transparent);
-      margin-bottom: 40px;
-      height: 0;
-      animation: growLine 1.2s cubic-bezier(.16,1,.3,1) 0.8s forwards;
-    }
-    .divider-bottom {
-      margin-top: 40px;
-      margin-bottom: 0;
-      animation-delay: 1.6s;
-    }
+.contact{
+text-decoration:none;
+color:var(--gold-dim);
+position:relative;
+padding-bottom:4px;
+}
 
-    .headline {
-      font-size: clamp(56px, 9vw, 130px);
-      font-weight: 300;
-      line-height: 0.9;
-      letter-spacing: -0.015em;
-      color: var(--paper);
-      opacity: 0;
-      animation: fadeUp 1.4s cubic-bezier(.16,1,.3,1) 0.9s forwards;
-    }
+.contact:hover{
+color:var(--gold);
+}
 
-    .headline em {
-      font-style: italic;
-      color: var(--gold);
-      display: block;
-      margin-top: 0.05em;
-    }
+.contact:after{
+content:"";
+position:absolute;
+bottom:0;
+left:0;
+width:0;
+height:1px;
+background:var(--gold);
+transition:.35s;
+}
 
-    .sub {
-      margin-top: 32px;
-      font-size: clamp(13px, 1.3vw, 17px);
-      font-weight: 300;
-      font-style: italic;
-      color: var(--dim);
-      letter-spacing: 0.06em;
-      line-height: 1.65;
-      opacity: 0;
-      animation: fadeUp 1.2s cubic-bezier(.16,1,.3,1) 1.1s forwards;
-    }
+.contact:hover:after{width:100%}
 
-    /* ── bottom bar ── */
-    .bottom {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      opacity: 0;
-      animation: fadeUp 1s cubic-bezier(.16,1,.3,1) 1.5s forwards;
-    }
+/* paw hover */
 
-    .meta {
-      font-family: 'Inconsolata', monospace;
-      font-size: clamp(8px, 0.78vw, 10px);
-      font-weight: 300;
-      color: var(--dim);
-      letter-spacing: 0.14em;
-      line-height: 1.8;
-    }
+.wordmark:hover:after,
+.meta:hover:after,
+.contact:hover:before{
+content:"🐾";
+position:absolute;
+margin-left:6px;
+font-size:11px;
+}
 
-    .contact {
-      font-family: 'Inconsolata', monospace;
-      font-size: clamp(8px, 0.78vw, 10px);
-      font-weight: 300;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--dim);
-      text-decoration: none;
-      position: relative;
-      padding-bottom: 3px;
-    }
+.contact:hover:before{
+left:-18px;
+}
 
-    .contact::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 0; height: 1px;
-      background: var(--gold);
-      transition: width 0.4s cubic-bezier(.16,1,.3,1);
-    }
-    .contact:hover { color: var(--gold); }
-    .contact:hover::after { width: 100%; }
+.meta:hover:after{
+margin-left:8px;
+}
 
-    /* ── corner marks ── */
-    .corner {
-      position: fixed;
-      width: 20px; height: 20px;
-      opacity: 0;
-      animation: fadeIn 1s ease 2s forwards;
-    }
-    .c-tl { top: 22px; left: 22px; border-top: 1px solid rgba(184,150,90,0.4); border-left: 1px solid rgba(184,150,90,0.4); }
-    .c-tr { top: 22px; right: 22px; border-top: 1px solid rgba(184,150,90,0.4); border-right: 1px solid rgba(184,150,90,0.4); }
-    .c-bl { bottom: 22px; left: 22px; border-bottom: 1px solid rgba(184,150,90,0.4); border-left: 1px solid rgba(184,150,90,0.4); }
-    .c-br { bottom: 22px; right: 22px; border-bottom: 1px solid rgba(184,150,90,0.4); border-right: 1px solid rgba(184,150,90,0.4); }
+/* hero */
 
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(16px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes fadeIn {
-      to { opacity: 1; }
-    }
-    @keyframes growLine {
-      to { height: 52px; }
-    }
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.2; }
-    }
-  </style>
+.center{
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+text-align:center;
+transform:translateY(-4vh);
+}
+
+.headline{
+margin:0;
+font-weight:300;
+font-size:clamp(64px,10vw,176px);
+line-height:.9;
+letter-spacing:-.03em;
+font-feature-settings:"liga" 1,"kern" 1;
+text-wrap:balance;
+}
+
+.headline span,
+.headline em{
+font-style:italic;
+color:var(--gold);
+margin-top:.22em;
+letter-spacing:-.018em;
+text-shadow:0 0 18px rgba(199,163,106,.1);
+animation-delay:1.2s;
+}
+
+.headline span:nth-child(1){animation-delay:.8s; letter-spacing:-.022em;}
+.headline span:nth-child(2){animation-delay:1s; letter-spacing:-.028em;}
+
+.headline em{
+font-style:italic;
+color:var(--gold);
+margin-top:.2em;
+text-shadow:0 0 18px rgba(199,163,106,.1);
+animation-delay:1.2s;
+}
+
+.tagline{
+margin-top:32px;
+font-family:"Inconsolata",monospace;
+letter-spacing:.22em;
+font-size:clamp(10px,.9vw,14px);
+text-transform:uppercase;
+color:var(--gold-soft);
+opacity:0;
+animation:fadeUp 1s ease 1.8s forwards;
+}
+
+.divider{
+width:1px;
+background:linear-gradient(to bottom,transparent,var(--gold),transparent);
+height:0;
+opacity:.7;
+animation:grow 1.2s cubic-bezier(.16,1,.3,1) forwards;
+}
+
+.topline{margin-bottom:36px;animation-delay:.7s}
+.bottomline{margin-top:36px;animation-delay:1.4s}
+
+/* corners */
+
+.corner{
+position:fixed;
+width:26px;
+height:26px;
+border-color:var(--gold-line);
+opacity:.8;
+}
+
+.c-tl{top:16px;left:16px;border-top:1px solid;border-left:1px solid}
+.c-tr{top:16px;right:16px;border-top:1px solid;border-right:1px solid}
+.c-bl{bottom:16px;left:16px;border-bottom:1px solid;border-left:1px solid}
+.c-br{bottom:16px;right:16px;border-bottom:1px solid;border-right:1px solid}
+
+/* animations */
+
+@keyframes fadeUp{
+from{opacity:0;transform:translateY(18px)}
+to{opacity:1;transform:translateY(0)}
+}
+
+@keyframes grow{
+from{height:0;opacity:0}
+to{height:54px;opacity:.7}
+}
+
+/* mobile */
+
+@media(max-width:640px){
+
+.center{transform:none}
+
+.headline{
+font-size:clamp(52px,15vw,90px);
+line-height:.92;
+}
+
+.divider{height:40px}
+
+.top,.bottom{
+letter-spacing:.16em;
+font-size:9px;
+}
+
+.corner{width:18px;height:18px}
+
+}
+
+</style>
 </head>
+
 <body>
 
-  <canvas id="bg"></canvas>
-  <div class="grain"></div>
-  <div class="edge"></div>
+<div class="corner c-tl"></div>
+<div class="corner c-tr"></div>
+<div class="corner c-bl"></div>
+<div class="corner c-br"></div>
 
-  <div class="corner c-tl"></div>
-  <div class="corner c-tr"></div>
-  <div class="corner c-bl"></div>
-  <div class="corner c-br"></div>
+<main class="stage">
 
-  <div class="stage">
-    <header class="top">
-      <div class="wordmark">Corgi Capital</div>
-      <div class="badge"><span class="badge-dot"></span>Stealth Mode</div>
-    </header>
+<header class="top">
+<div class="wordmark">Corgi Capital</div>
+</header>
 
-    <main class="center">
-      <div class="divider"></div>
-      <h1 class="headline">
-        We know<br>something<br><em>you don't.</em>
-      </h1>
-      <div class="divider divider-bottom"></div>
-    </main>
+<section class="center">
 
-    <footer class="bottom">
-      <div class="meta">
-        40.7128° N &nbsp;/&nbsp; 74.0060° W<br>
-        New York, NY
-      </div>
-      <a href="mailto:hello@corgi-capital.com" class="contact">hello@corgi-capital.com</a>
-    </footer>
-  </div>
+<div class="divider topline"></div>
 
-  <script>
-    // ── Particle field: slow-drifting nodes + faint connecting lines ──
-    const canvas = document.getElementById('bg');
-    const ctx = canvas.getContext('2d');
+<h1 class="headline">
+<span>We know</span>
+<span>something</span>
+<em>you don't.</em>
+</h1>
 
-    const GOLD   = [201, 169, 110];
-    const N      = 72;   // particle count
-    const LINK_D = 180;  // max distance to draw a link
-    const SPEED  = 0.18; // base drift speed
+<div class="divider bottomline"></div>
 
-    let W, H, particles;
+<div class="tagline">Selective capital.</div>
 
-    function rand(a, b) { return a + Math.random() * (b - a); }
+</section>
 
-    class Particle {
-      constructor() { this.reset(true); }
+<footer class="bottom">
 
-      reset(init) {
-        this.x  = rand(0, W);
-        this.y  = init ? rand(0, H) : (Math.random() < 0.5 ? -4 : H + 4);
-        this.vx = rand(-SPEED, SPEED);
-        this.vy = rand(-SPEED, SPEED);
-        // ensure non-zero velocity
-        if (Math.abs(this.vx) < 0.05) this.vx = SPEED * (Math.random() < 0.5 ? 1 : -1);
-        this.r  = rand(0.6, 1.6);
-        this.alpha = rand(0.25, 0.65);
-      }
+<div class="meta">
+40.7128° N<br>
+74.0060° W
+</div>
 
-      update() {
-        this.x += this.vx;
-        this.y += this.vy;
-        if (this.x < -10 || this.x > W + 10 || this.y < -10 || this.y > H + 10) {
-          this.reset(false);
-        }
-      }
+<a class="contact" href="mailto:hello@corgi-capital.com">hello@corgi-capital.com</a>
 
-      draw() {
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${GOLD[0]},${GOLD[1]},${GOLD[2]},${this.alpha})`;
-        ctx.fill();
-      }
-    }
+</footer>
 
-    function resize() {
-      W = canvas.width  = window.innerWidth;
-      H = canvas.height = window.innerHeight;
-    }
-
-    function init() {
-      resize();
-      particles = Array.from({ length: N }, () => new Particle());
-    }
-
-    function drawLinks() {
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const a = particles[i], b = particles[j];
-          const dx = a.x - b.x, dy = a.y - b.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < LINK_D) {
-            const t = 1 - dist / LINK_D;
-            const alpha = t * t * 0.12; // squared falloff, stays subtle
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.strokeStyle = `rgba(${GOLD[0]},${GOLD[1]},${GOLD[2]},${alpha})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        }
-      }
-    }
-
-    function loop() {
-      ctx.clearRect(0, 0, W, H);
-      drawLinks();
-      for (const p of particles) { p.update(); p.draw(); }
-      requestAnimationFrame(loop);
-    }
-
-    window.addEventListener('resize', () => {
-      resize();
-      // reposition any out-of-bounds particles
-      for (const p of particles) {
-        if (p.x > W) p.x = rand(0, W);
-        if (p.y > H) p.y = rand(0, H);
-      }
-    });
-
-    init();
-    loop();
-  </script>
+</main>
 
 </body>
 </html>
