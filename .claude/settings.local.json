@@ -3,7 +3,14 @@
     "allow": [
       "Bash(git -C \"C:/Users/wskyu/OneDrive/Documents/Corgi Capital Website\" ls-files)",
       "Bash(git -C \"C:/Users/wskyu/OneDrive/Documents/Corgi Capital Website\" rm --cached --ignore-unmatch CLAUDE.md VISUAL_IDENTITY.md SITE_ARCHITECTURE.md \"SITE_ARCHITECTURE.md.txt\")",
-      "Bash(git -C \"C:/Users/wskyu/OneDrive/Documents/Corgi Capital Website\" status)"
+      "Bash(git -C \"C:/Users/wskyu/OneDrive/Documents/Corgi Capital Website\" status)",
+      "Bash(git -C \"C:\\\\Users\\\\wskyu\\\\OneDrive\\\\Documents\\\\Corgi Capital Website\" log --oneline)",
+      "Bash(git -C \"C:\\\\Users\\\\wskyu\\\\OneDrive\\\\Documents\\\\Corgi Capital Website\" log --all --oneline)",
+      "Bash(git -C \"C:\\\\Users\\\\wskyu\\\\OneDrive\\\\Documents\\\\Corgi Capital Website\" log -p --all -S \"paw\")",
+      "Bash(git -C \"C:\\\\Users\\\\wskyu\\\\OneDrive\\\\Documents\\\\Corgi Capital Website\" log -p --all -S \"cursor\")",
+      "Bash(git -C \"C:\\\\Users\\\\wskyu\\\\OneDrive\\\\Documents\\\\Corgi Capital Website\" log -p --all -S \"🐾\")",
+      "Bash(git -C \"C:\\\\Users\\\\wskyu\\\\OneDrive\\\\Documents\\\\Corgi Capital Website\" log -p --all -S \"emoji\")",
+      "Bash(git -C \"C:\\\\Users\\\\wskyu\\\\OneDrive\\\\Documents\\\\Corgi Capital Website\" log -p --all -S \"corgi\")"
     ]
   }
 }

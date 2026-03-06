@@ -56,6 +56,21 @@
     .c-bl { bottom: 18px; left: 18px;  border-bottom: 1px solid var(--gold-line); border-left:  1px solid var(--gold-line); }
     .c-br { bottom: 18px; right: 18px; border-bottom: 1px solid var(--gold-line); border-right: 1px solid var(--gold-line); }
 
+    /* ── canvas + grain ── */
+    #bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .grain {
+      position: fixed; inset: 0; z-index: 1;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      opacity: 0.045;
+      pointer-events: none;
+    }
+
     /* ── sections ── */
     .section {
       scroll-snap-align: start;
@@ -64,6 +79,8 @@
       display: grid;
       grid-template-rows: auto 1fr auto;
       padding: clamp(24px, 4vw, 48px) clamp(32px, 6vw, 80px);
+      position: relative;
+      z-index: 2;
       position: relative;
     }
 
@@ -162,7 +179,19 @@
       animation: fadeUp 1s cubic-bezier(.16,1,.3,1) 0.25s forwards;
     }
 
-    .meta { line-height: 1.9; }
+    .meta { line-height: 1.9; position: relative; }
+
+    /* ── paw ── */
+    .wordmark { position: relative; }
+    .wordmark:hover::after,
+    .meta:hover::after {
+      content: " 🐾";
+      font-size: 10px;
+    }
+    .contact:hover::before {
+      content: "🐾 ";
+      font-size: 10px;
+    }
 
     .contact {
       color: var(--gold-dim);
@@ -299,6 +328,9 @@
 </head>
 <body>
 
+  <canvas id="bg" aria-hidden="true"></canvas>
+  <div class="grain" aria-hidden="true"></div>
+
   <div class="corner c-tl"></div>
   <div class="corner c-tr"></div>
   <div class="corner c-bl"></div>
@@ -350,7 +382,7 @@
         <div class="pillar">
           <div class="pillar-line"></div>
           <div class="pillar-title">Signal<br>Extraction</div>
-          <div class="pillar-desc">Signal where others<br>see noise.<br>Beyond datasets.</div>
+          <div class="pillar-desc">Signal where others<br>see noise.<br>Structure in the unstructured.</div>
         </div>
 
         <div class="pillar-sep"></div>
@@ -458,6 +490,85 @@
     });
 
     showStage(0);
+
+    // ── Particle field ──
+    (function () {
+      const canvas = document.getElementById('bg');
+      const ctx    = canvas.getContext('2d');
+      const GOLD   = [201, 165, 90];
+      const N      = 72;
+      const LINK_D = 180;
+      const SPEED  = 0.18;
+      let W, H, particles;
+
+      function rand(a, b) { return a + Math.random() * (b - a); }
+
+      function Particle() { this.reset(true); }
+      Particle.prototype.reset = function (init) {
+        this.x     = rand(0, W);
+        this.y     = init ? rand(0, H) : (Math.random() < 0.5 ? -4 : H + 4);
+        this.vx    = rand(-SPEED, SPEED);
+        this.vy    = rand(-SPEED, SPEED);
+        if (Math.abs(this.vx) < 0.05) this.vx = SPEED * (Math.random() < 0.5 ? 1 : -1);
+        this.r     = rand(0.6, 1.6);
+        this.alpha = rand(0.25, 0.65);
+      };
+      Particle.prototype.update = function () {
+        this.x += this.vx; this.y += this.vy;
+        if (this.x < -10 || this.x > W + 10 || this.y < -10 || this.y > H + 10) this.reset(false);
+      };
+      Particle.prototype.draw = function () {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${GOLD[0]},${GOLD[1]},${GOLD[2]},${this.alpha})`;
+        ctx.fill();
+      };
+
+      function resize() {
+        W = canvas.width  = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+      }
+
+      function drawLinks() {
+        for (let i = 0; i < particles.length; i++) {
+          for (let j = i + 1; j < particles.length; j++) {
+            const a = particles[i], b = particles[j];
+            const dx = a.x - b.x, dy = a.y - b.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < LINK_D) {
+              const t = 1 - dist / LINK_D;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.strokeStyle = `rgba(${GOLD[0]},${GOLD[1]},${GOLD[2]},${t * t * 0.12})`;
+              ctx.lineWidth = 0.5;
+              ctx.stroke();
+            }
+          }
+        }
+      }
+
+      function loop() {
+        ctx.clearRect(0, 0, W, H);
+        drawLinks();
+        for (const p of particles) { p.update(); p.draw(); }
+        requestAnimationFrame(loop);
+      }
+
+      window.addEventListener('resize', () => {
+        resize();
+        for (const p of particles) {
+          if (p.x > W) p.x = rand(0, W);
+          if (p.y > H) p.y = rand(0, H);
+        }
+      });
+
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        resize();
+        particles = Array.from({ length: N }, () => new Particle());
+        loop();
+      }
+    }());
   </script>
 </body>
 </html>
