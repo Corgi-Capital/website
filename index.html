@@ -65,10 +65,12 @@
     }
 
     .grain {
-      position: fixed; inset: 0; z-index: 1;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-      opacity: 0.045;
-      pointer-events: none;
+       position: fixed;
+       inset: 0;
+       z-index: 1;
+       background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence      type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+       opacity: 0.01;
+       pointer-events: none;
     }
 
     /* ── sections ── */
@@ -231,9 +233,9 @@
       display: flex;
       align-items: flex-start;
       justify-content: center;
-      gap: clamp(14px, 3vw, 48px);
+      gap: clamp(20px, 3.5vw, 64px);
       width: 100%;
-      max-width: 1080px;
+      max-width: 1400px;
     }
 
     .pillar {
@@ -257,7 +259,7 @@
 
     .pillar-title {
       font-family: 'Cormorant Garamond', Georgia, serif;
-      font-size: clamp(20px, 2.5vw, 38px);
+      font-size: clamp(20px, 2.1vw, 34px);
       font-weight: 400;
       line-height: 1.05;
       text-align: center;
@@ -274,7 +276,8 @@
     }
 
     .pillar-sep {
-      width: 1px; height: 72px;
+      width: 1px;
+      height: clamp(60px,5vw,80px);
       background: var(--gold-line);
       align-self: center; flex-shrink: 0;
     }
@@ -304,6 +307,7 @@
       .divider.topline    { margin-bottom: 24px; }
       .divider.bottomline { margin-top: 24px; }
       .stack { min-height: clamp(110px, 40vw, 180px); }
+      .grain { opacity: 0.045; }
 
       .pillars { flex-direction: column; align-items: center; gap: 28px; }
       .pillar-sep { width: 32px; height: 1px; }
