@@ -27,6 +27,10 @@
       overflow: hidden;
     }
 
+    @supports (height: 100dvh) {
+      html, body { height: 100dvh; }
+    }
+
     /* ── canvas background ── */
     #bg {
       position: fixed;
@@ -42,20 +46,23 @@
       pointer-events: none;
     }
 
-    /* ── vignette ── */
-    .vignette {
+    /* ── paintbrush edge ── */
+    .edge {
       position: fixed; inset: 0; z-index: 2;
-      background: radial-gradient(ellipse at center,
-        transparent 55%,
-        rgba(8,9,11,0.5) 100%
-      );
       pointer-events: none;
+      box-shadow:
+        inset 0   0   160px 60px rgba(8,9,11,0.98),
+        inset 0   0   80px  20px rgba(8,9,11,0.75),
+        inset 0   0   30px  6px  rgba(8,9,11,0.4);
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='3' seed='8'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='18' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23r)' fill='white'/%3E%3C/svg%3E");
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='3' seed='8'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='18' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23r)' fill='white'/%3E%3C/svg%3E");
     }
 
     /* ── layout ── */
     .stage {
       position: relative; z-index: 3;
       height: 100vh;
+      height: 100dvh;
       display: grid;
       grid-template-rows: auto 1fr auto;
       padding: clamp(28px, 5vw, 60px) clamp(28px, 6vw, 72px);
@@ -225,7 +232,7 @@
 
   <canvas id="bg"></canvas>
   <div class="grain"></div>
-  <div class="vignette"></div>
+  <div class="edge"></div>
 
   <div class="corner c-tl"></div>
   <div class="corner c-tr"></div>
