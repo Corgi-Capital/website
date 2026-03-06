@@ -13,10 +13,10 @@
 
     :root {
       --ink:   #08090b;
-      --paper: #e8e4da;
-      --gold:  #b8965a;
-      --dim:   #4a4540;
-      --rule:  rgba(184,150,90,0.15);
+      --paper: #f0ece2;
+      --gold:  #c9a96e;
+      --dim:   #6b6456;
+      --rule:  rgba(201,169,110,0.2);
     }
 
     html, body {
@@ -46,8 +46,8 @@
     .vignette {
       position: fixed; inset: 0; z-index: 2;
       background: radial-gradient(ellipse at center,
-        transparent 40%,
-        rgba(8,9,11,0.65) 100%
+        transparent 55%,
+        rgba(8,9,11,0.5) 100%
       );
       pointer-events: none;
     }
@@ -241,12 +241,8 @@
     <main class="center">
       <div class="divider"></div>
       <h1 class="headline">
-        Information<br>has a<br><em>price.</em>
+        We know<br>something<br><em>you don't.</em>
       </h1>
-      <p class="sub">
-        Systematic strategies. Inefficient markets.<br>
-        Something is coming.
-      </p>
       <div class="divider divider-bottom"></div>
     </main>
 
@@ -264,7 +260,7 @@
     const canvas = document.getElementById('bg');
     const ctx = canvas.getContext('2d');
 
-    const GOLD   = [184, 150, 90];
+    const GOLD   = [201, 169, 110];
     const N      = 72;   // particle count
     const LINK_D = 180;  // max distance to draw a link
     const SPEED  = 0.18; // base drift speed
@@ -284,7 +280,7 @@
         // ensure non-zero velocity
         if (Math.abs(this.vx) < 0.05) this.vx = SPEED * (Math.random() < 0.5 ? 1 : -1);
         this.r  = rand(0.6, 1.6);
-        this.alpha = rand(0.15, 0.55);
+        this.alpha = rand(0.25, 0.65);
       }
 
       update() {
