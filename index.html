@@ -1,292 +1,389 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Corgi Capital</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Corgi Capital</title>
+  <meta name="description" content="Corgi Capital" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inconsolata:wght@300;400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --black: #0b0b0b;
+      --ivory: #f3efe6;
+      --gold: #c7a36a;
+      --gold-soft: #a88952;
+      --gold-dim: rgba(199, 163, 106, 0.56);
+      --gold-line: rgba(199, 163, 106, 0.24);
+      --edge-shadow: rgba(0, 0, 0, 0.12);
+    }
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Inconsolata:wght@300;400&display=swap" rel="stylesheet">
+    * { box-sizing: border-box; }
 
-<style>
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--black);
+      color: var(--ivory);
+      overflow-x: hidden;
+      scroll-behavior: smooth;
+    }
 
-:root{
---black:#0b0b0b;
---ivory:#f3efe6;
---gold:#c7a36a;
---gold-soft:#a88952;
---gold-dim:rgba(199,163,106,.55);
---gold-line:rgba(199,163,106,.28);
-}
+    body {
+      font-family: 'Playfair Display', serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      background:
+        radial-gradient(circle at 50% 40%, rgba(255,255,255,0.028), transparent 36%),
+        linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0) 38%),
+        var(--black);
+    }
 
-*{box-sizing:border-box}
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at center, transparent 54%, var(--edge-shadow) 100%);
+      z-index: 0;
+    }
 
-html,body{
-margin:0;
-background:var(--black);
-color:var(--ivory);
-font-family:"Cormorant Garamond",serif;
--webkit-font-smoothing:antialiased;
-overflow-x:hidden;
-}
+    .corner {
+      position: fixed;
+      width: 24px;
+      height: 24px;
+      z-index: 4;
+      opacity: 0;
+      animation: fadeIn 0.9s ease 0.9s forwards;
+    }
 
-/* warm dark background */
-body{
-background:
-radial-gradient(circle at 50% 40%,rgba(255,255,255,.035),transparent 38%),
-linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,0) 40%),
-var(--black);
-}
+    .c-tl { top: 16px; left: 16px; border-top: 1px solid var(--gold-line); border-left: 1px solid var(--gold-line); }
+    .c-tr { top: 16px; right: 16px; border-top: 1px solid var(--gold-line); border-right: 1px solid var(--gold-line); }
+    .c-bl { bottom: 16px; left: 16px; border-bottom: 1px solid var(--gold-line); border-left: 1px solid var(--gold-line); }
+    .c-br { bottom: 16px; right: 16px; border-bottom: 1px solid var(--gold-line); border-right: 1px solid var(--gold-line); }
 
-body:after{
-content:"";
-position:fixed;
-inset:0;
-pointer-events:none;
-background:radial-gradient(circle at center,transparent 50%,rgba(0,0,0,.12) 100%);
-}
+    .shell {
+      position: relative;
+      z-index: 2;
+      min-height: 200vh;
+    }
 
-.stage{
-min-height:100vh;
-display:grid;
-grid-template-rows:auto 1fr auto;
-padding:clamp(22px,4vw,48px) clamp(20px,5vw,72px);
-position:relative;
-z-index:2;
-}
+    .hero {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      padding: clamp(22px, 4vw, 44px) clamp(20px, 5vw, 72px) clamp(24px, 4vw, 40px);
+    }
 
-/* header */
+    .top,
+    .bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      font-family: 'Inconsolata', monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: clamp(9px, 0.8vw, 12px);
+      color: var(--gold-dim);
+      opacity: 0;
+      animation: fadeUp 0.95s cubic-bezier(.16,1,.3,1) forwards;
+    }
 
-.top,.bottom{
-display:flex;
-justify-content:space-between;
-align-items:flex-start;
-font-family:"Inconsolata",monospace;
-text-transform:uppercase;
-letter-spacing:.22em;
-font-size:clamp(9px,.8vw,12px);
-color:var(--gold-dim);
-animation:fadeUp 1s ease forwards;
-opacity:0;
-}
+    .top { animation-delay: 0.15s; }
+    .bottom { align-items: flex-end; animation-delay: 0.3s; }
 
-.bottom{
-align-items:flex-end;
-animation-delay:1.2s;
-}
+    .wordmark,
+    .meta,
+    .contact {
+      position: relative;
+    }
 
-.wordmark{
-color:var(--gold);
-letter-spacing:.22em;
-position:relative;
-}
+    .wordmark {
+      color: var(--gold);
+      letter-spacing: 0.22em;
+      white-space: nowrap;
+    }
 
-.meta{
-line-height:1.8;
-position:relative;
-}
+    .meta {
+      line-height: 1.85;
+      white-space: nowrap;
+    }
 
-.contact{
-text-decoration:none;
-color:var(--gold-dim);
-position:relative;
-padding-bottom:4px;
-}
+    .contact {
+      color: var(--gold-dim);
+      text-decoration: none;
+      padding-bottom: 4px;
+      white-space: nowrap;
+      transition: color 0.25s ease;
+    }
 
-.contact:hover{
-color:var(--gold);
-}
+    .contact::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 0;
+      height: 1px;
+      background: var(--gold);
+      transition: width 0.35s cubic-bezier(.16,1,.3,1);
+    }
 
-.contact:after{
-content:"";
-position:absolute;
-bottom:0;
-left:0;
-width:0;
-height:1px;
-background:var(--gold);
-transition:.35s;
-}
+    .contact:hover {
+      color: var(--gold);
+    }
 
-.contact:hover:after{width:100%}
+    .contact:hover::after {
+      width: 100%;
+    }
 
-/* paw hover */
+    .wordmark:hover::after,
+    .meta:hover::after,
+    .contact:hover::before {
+      content: "🐾";
+      position: absolute;
+      font-size: 11px;
+      line-height: 1;
+    }
 
-.wordmark:hover:after,
-.meta:hover:after,
-.contact:hover:before{
-content:"🐾";
-position:absolute;
-margin-left:6px;
-font-size:11px;
-}
+    .wordmark:hover::after {
+      margin-left: 7px;
+      top: 0;
+    }
 
-.contact:hover:before{
-left:-18px;
-}
+    .meta:hover::after {
+      margin-left: 8px;
+      bottom: 2px;
+    }
 
-.meta:hover:after{
-margin-left:8px;
-}
+    .contact:hover::before {
+      left: -18px;
+      top: 1px;
+    }
 
-/* hero */
+    .center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      transform: translateY(-5vh);
+      min-width: 0;
+    }
 
-.center{
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
-text-align:center;
-transform:translateY(-4vh);
-}
+    .divider {
+      width: 1px;
+      height: 48px;
+      background: linear-gradient(to bottom, transparent, rgba(199,163,106,0.82), transparent);
+      opacity: 0;
+      animation: fadeIn 0.9s ease forwards;
+    }
 
-.headline{
-margin:0;
-font-weight:300;
-font-size:clamp(64px,10vw,176px);
-line-height:.9;
-letter-spacing:-.03em;
-font-feature-settings:"liga" 1,"kern" 1;
-text-wrap:balance;
-}
+    .divider.topline { margin-bottom: 34px; animation-delay: 0.55s; }
+    .divider.bottomline { margin-top: 34px; animation-delay: 1.05s; }
 
-.headline span,
-.headline em{
-font-style:italic;
-color:var(--gold);
-margin-top:.22em;
-letter-spacing:-.018em;
-text-shadow:0 0 18px rgba(199,163,106,.1);
-animation-delay:1.2s;
-}
+    .headline {
+      margin: 0;
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(58px, 9.4vw, 154px);
+      font-weight: 600;
+      line-height: 0.92;
+      letter-spacing: 0.045em;
+      text-transform: uppercase;
+      text-wrap: balance;
+    }
 
-.headline span:nth-child(1){animation-delay:.8s; letter-spacing:-.022em;}
-.headline span:nth-child(2){animation-delay:1s; letter-spacing:-.028em;}
+    .headline .line {
+      display: block;
+      opacity: 0;
+      transform: translateY(20px);
+      animation: fadeUp 1.05s cubic-bezier(.16,1,.3,1) forwards;
+    }
 
-.headline em{
-font-style:italic;
-color:var(--gold);
-margin-top:.2em;
-text-shadow:0 0 18px rgba(199,163,106,.1);
-animation-delay:1.2s;
-}
+    .headline .line.one { animation-delay: 0.7s; }
+    .headline .line.two {
+      color: var(--gold);
+      margin-top: 0.28em;
+      letter-spacing: 0.05em;
+      transition: opacity 0.6s ease, transform 0.6s ease;
+      animation: none;
+      opacity: 0;
+      transform: translateY(28px);
+      text-shadow: 0 0 18px rgba(199,163,106,0.08);
+    }
 
-.tagline{
-margin-top:32px;
-font-family:"Inconsolata",monospace;
-letter-spacing:.22em;
-font-size:clamp(10px,.9vw,14px);
-text-transform:uppercase;
-color:var(--gold-soft);
-opacity:0;
-animation:fadeUp 1s ease 1.8s forwards;
-}
+    .headline.revealed .line.two {
+      opacity: 1;
+      transform: translateY(0);
+    }
 
-.divider{
-width:1px;
-background:linear-gradient(to bottom,transparent,var(--gold),transparent);
-height:0;
-opacity:.7;
-animation:grow 1.2s cubic-bezier(.16,1,.3,1) forwards;
-}
+    .scroll-cue {
+      margin-top: 18px;
+      font-family: 'Inconsolata', monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: clamp(9px, 0.75vw, 11px);
+      color: rgba(199,163,106,0.5);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+      animation: fadeUp 0.9s ease 1.1s forwards;
+    }
 
-.topline{margin-bottom:36px;animation-delay:.7s}
-.bottomline{margin-top:36px;animation-delay:1.4s}
+    .headline.revealed + .scroll-cue {
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+    }
 
-/* corners */
+    .tagline {
+      margin-top: 28px;
+      font-family: 'Inconsolata', monospace;
+      text-transform: none;
+      letter-spacing: 0.08em;
+      font-size: clamp(12px, 1vw, 16px);
+      color: var(--gold-soft);
+      opacity: 0;
+      transform: translateY(14px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
 
-.corner{
-position:fixed;
-width:26px;
-height:26px;
-border-color:var(--gold-line);
-opacity:.8;
-}
+    .headline.revealed ~ .tagline {
+      opacity: 1;
+      transform: translateY(0);
+      transition-delay: 0.12s;
+    }
 
-.c-tl{top:16px;left:16px;border-top:1px solid;border-left:1px solid}
-.c-tr{top:16px;right:16px;border-top:1px solid;border-right:1px solid}
-.c-bl{bottom:16px;left:16px;border-bottom:1px solid;border-left:1px solid}
-.c-br{bottom:16px;right:16px;border-bottom:1px solid;border-right:1px solid}
+    .spacer {
+      height: 100vh;
+      height: 100dvh;
+    }
 
-/* animations */
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(18px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
 
-@keyframes fadeUp{
-from{opacity:0;transform:translateY(18px)}
-to{opacity:1;transform:translateY(0)}
-}
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 0.78; }
+    }
 
-@keyframes grow{
-from{height:0;opacity:0}
-to{height:54px;opacity:.7}
-}
+    @media (min-width: 1440px) {
+      .center { transform: translateY(-6vh); }
+      .headline { font-size: min(9vw, 162px); }
+    }
 
-/* mobile */
+    @media (max-width: 900px) {
+      .center { transform: translateY(-2vh); }
+      .headline { font-size: clamp(52px, 10.6vw, 112px); }
+    }
 
-@media(max-width:640px){
+    @media (max-width: 640px) {
+      .hero {
+        padding: 22px 18px 24px;
+      }
 
-.center{transform:none}
+      .center {
+        transform: none;
+      }
 
-.headline{
-font-size:clamp(52px,15vw,90px);
-line-height:.92;
-}
+      .headline {
+        font-size: clamp(42px, 12.8vw, 78px);
+        line-height: 0.95;
+        letter-spacing: 0.04em;
+      }
 
-.divider{height:40px}
+      .headline .line.two {
+        margin-top: 0.36em;
+      }
 
-.top,.bottom{
-letter-spacing:.16em;
-font-size:9px;
-}
+      .divider {
+        height: 38px;
+      }
 
-.corner{width:18px;height:18px}
+      .divider.topline { margin-bottom: 24px; }
+      .divider.bottomline { margin-top: 24px; }
 
-}
+      .top,
+      .bottom {
+        letter-spacing: 0.14em;
+        font-size: 9px;
+      }
 
-</style>
+      .corner {
+        width: 18px;
+        height: 18px;
+      }
+
+      .scroll-cue {
+        margin-top: 16px;
+      }
+
+      .tagline {
+        margin-top: 22px;
+        font-size: 12px;
+      }
+    }
+  </style>
 </head>
-
 <body>
+  <div class="corner c-tl"></div>
+  <div class="corner c-tr"></div>
+  <div class="corner c-bl"></div>
+  <div class="corner c-br"></div>
 
-<div class="corner c-tl"></div>
-<div class="corner c-tr"></div>
-<div class="corner c-bl"></div>
-<div class="corner c-br"></div>
+  <div class="shell">
+    <main class="hero">
+      <header class="top">
+        <div class="wordmark">Corgi Capital</div>
+      </header>
 
-<main class="stage">
+      <section class="center" aria-label="Hero">
+        <div class="divider topline"></div>
 
-<header class="top">
-<div class="wordmark">Corgi Capital</div>
-</header>
+        <h1 class="headline" id="headline">
+          <span class="line one">We Know Something</span>
+          <span class="line two">You Don&apos;t</span>
+        </h1>
 
-<section class="center">
+        <div class="scroll-cue" id="scrollCue">Scroll</div>
+        <div class="tagline">Selective Capital</div>
 
-<div class="divider topline"></div>
+        <div class="divider bottomline"></div>
+      </section>
 
-<h1 class="headline">
-<span>We know</span>
-<span>something</span>
-<em>you don't.</em>
-</h1>
+      <footer class="bottom">
+        <div class="meta">40.7128° N<br>74.0060° W</div>
+        <a class="contact" href="mailto:hello@corgi-capital.com">hello@corgi-capital.com</a>
+      </footer>
+    </main>
 
-<div class="divider bottomline"></div>
+    <div class="spacer" aria-hidden="true"></div>
+  </div>
 
-<div class="tagline">Selective capital.</div>
+  <script>
+    const headline = document.getElementById('headline');
+    const revealAt = 80;
 
-</section>
+    function updateReveal() {
+      if (window.scrollY >= revealAt) {
+        headline.classList.add('revealed');
+      } else {
+        headline.classList.remove('revealed');
+      }
+    }
 
-<footer class="bottom">
-
-<div class="meta">
-40.7128° N<br>
-74.0060° W
-</div>
-
-<a class="contact" href="mailto:hello@corgi-capital.com">hello@corgi-capital.com</a>
-
-</footer>
-
-</main>
-
+    updateReveal();
+    window.addEventListener('scroll', updateReveal, { passive: true });
+  </script>
 </body>
 </html>
