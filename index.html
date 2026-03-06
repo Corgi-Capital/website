@@ -4,7 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Corgi Capital</title>
-  <meta name="description" content="Selective Capital" />
+  <link rel="canonical" href="https://corgi-capital.com" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0b0b'/%3E%3Cpath d='M8 14 L8 8 L14 8' stroke='%23c9a55a' stroke-width='1.5' fill='none'/%3E%3Cpath d='M24 18 L24 24 L18 24' stroke='%23c9a55a' stroke-width='1.5' fill='none'/%3E%3C/svg%3E" />
+  <meta name="description" content="Selective Capital." />
+  <meta property="og:title" content="Corgi Capital" />
+  <meta property="og:description" content="Selective Capital." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://corgi-capital.com" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Inconsolata:wght@300;400&family=Libre+Baskerville:ital,wght@1,400&display=swap" rel="stylesheet">
@@ -196,9 +202,9 @@
       display: flex;
       align-items: flex-start;
       justify-content: center;
-      gap: clamp(28px, 5vw, 80px);
+      gap: clamp(14px, 3vw, 48px);
       width: 100%;
-      max-width: 860px;
+      max-width: 1080px;
     }
 
     .pillar {
@@ -211,8 +217,9 @@
     }
     .pillar.visible { animation: fadeUp 0.9s cubic-bezier(.16,1,.3,1) forwards; }
     .pillar:nth-child(1) { animation-delay: 0.05s; }
-    .pillar:nth-child(3) { animation-delay: 0.2s; }
-    .pillar:nth-child(5) { animation-delay: 0.35s; }
+    .pillar:nth-child(3) { animation-delay: 0.15s; }
+    .pillar:nth-child(5) { animation-delay: 0.25s; }
+    .pillar:nth-child(7) { animation-delay: 0.35s; }
 
     .pillar-line {
       width: 1px; height: 28px;
@@ -221,7 +228,7 @@
 
     .pillar-title {
       font-family: 'Cormorant Garamond', Georgia, serif;
-      font-size: clamp(24px, 3.2vw, 46px);
+      font-size: clamp(20px, 2.5vw, 38px);
       font-weight: 400;
       line-height: 1.05;
       text-align: center;
@@ -230,12 +237,11 @@
 
     .pillar-desc {
       font-family: 'Inconsolata', monospace;
-      font-size: clamp(9px, 0.72vw, 11px);
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
+      font-size: clamp(9px, 0.68vw, 11px);
+      letter-spacing: 0.07em;
       color: var(--gold-dim);
       text-align: center;
-      line-height: 1.75;
+      line-height: 1.8;
     }
 
     .pillar-sep {
@@ -270,9 +276,9 @@
       .divider.bottomline { margin-top: 24px; }
       .stack { min-height: clamp(110px, 40vw, 180px); }
 
-      .pillars { flex-direction: column; align-items: center; gap: 24px; }
-      .pillar-sep { width: 36px; height: 1px; }
-      .pillar-title { font-size: clamp(30px, 8vw, 44px); }
+      .pillars { flex-direction: column; align-items: center; gap: 28px; }
+      .pillar-sep { width: 32px; height: 1px; }
+      .pillar-title { font-size: clamp(28px, 7.5vw, 42px); }
 
       .corner { width: 14px; height: 14px; }
     }
@@ -336,15 +342,23 @@
         <div class="pillar">
           <div class="pillar-line"></div>
           <div class="pillar-title">Selective<br>Capital</div>
-          <div class="pillar-desc">Conviction-driven.<br>Position size follows<br>edge, not formula.</div>
+          <div class="pillar-desc">Conviction first.<br>Edge determines size.<br>Not allocation models.</div>
         </div>
 
         <div class="pillar-sep"></div>
 
         <div class="pillar">
           <div class="pillar-line"></div>
-          <div class="pillar-title">Data<br>Beyond Data</div>
-          <div class="pillar-desc">Signal where<br>others see noise.</div>
+          <div class="pillar-title">Signal<br>Extraction</div>
+          <div class="pillar-desc">Signal where others<br>see noise.<br>Beyond datasets.</div>
+        </div>
+
+        <div class="pillar-sep"></div>
+
+        <div class="pillar">
+          <div class="pillar-line"></div>
+          <div class="pillar-title">Probabilistic<br>Insight</div>
+          <div class="pillar-desc">Reason in probabilities.<br>Underwrite ranges,<br>not certainties.</div>
         </div>
 
         <div class="pillar-sep"></div>
@@ -352,7 +366,7 @@
         <div class="pillar">
           <div class="pillar-line"></div>
           <div class="pillar-title">Intangible<br>Edge</div>
-          <div class="pillar-desc">Markets price facts.<br>We price<br>what's next.</div>
+          <div class="pillar-desc">Markets price what they know.<br>We price what's next.</div>
         </div>
       </div>
     </div>
