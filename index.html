@@ -83,7 +83,6 @@
       padding: clamp(24px, 4vw, 48px) clamp(32px, 6vw, 80px);
       position: relative;
       z-index: 2;
-      position: relative;
     }
 
     /* ── top bar ── */
@@ -189,10 +188,12 @@
     .meta:hover::after {
       content: " 🐾";
       font-size: 10px;
+      filter: sepia(1) saturate(3) brightness(2) hue-rotate(5deg);
     }
     .contact:hover::before {
       content: "🐾 ";
       font-size: 10px;
+      filter: sepia(1) saturate(3) brightness(2) hue-rotate(5deg);
     }
 
     .contact {
@@ -301,7 +302,11 @@
 
     /* ── mobile ── */
     @media (max-width: 640px) {
+      html { scroll-snap-type: none; }
+
       .section { padding: 28px 32px; }
+      .section-2 { height: auto; padding-bottom: 56px; }
+
       .center  { transform: none; }
       .headline { font-size: clamp(44px, 13.5vw, 74px); line-height: 0.93; }
       .divider.topline    { margin-bottom: 24px; }
@@ -437,6 +442,14 @@
     }
 
     let activeSection = 'hero';
+    let scrollingToSection = false;
+
+    function goToPillars() {
+      if (scrollingToSection) return;
+      scrollingToSection = true;
+      document.getElementById('pillars').scrollIntoView({ behavior: 'smooth' });
+      setTimeout(() => { scrollingToSection = false; }, 900);
+    }
 
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(e => {
@@ -460,7 +473,8 @@
       if (activeSection !== 'hero') return;
       const dir = e.deltaY > 0 ? 1 : -1;
       if (dir > 0 && current < stages.length - 1) { e.preventDefault(); advanceStage(1); return; }
-      if (dir < 0 && current > 0)                  { e.preventDefault(); advanceStage(-1); return; }
+      if (dir > 0 && current === stages.length - 1) { e.preventDefault(); goToPillars(); return; }
+      if (dir < 0 && current > 0)                   { e.preventDefault(); advanceStage(-1); return; }
     }, { passive: false });
 
     let touchStartY = null;
@@ -476,7 +490,8 @@
       const dir = delta > 0 ? 1 : -1;
       if (activeSection === 'hero') {
         if (dir > 0 && current < stages.length - 1) { advanceStage(1); return; }
-        if (dir < 0 && current > 0)                  { advanceStage(-1); return; }
+        if (dir > 0 && current === stages.length - 1) { goToPillars(); return; }
+        if (dir < 0 && current > 0)                   { advanceStage(-1); return; }
       }
     }, { passive: true });
 
