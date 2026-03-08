@@ -3,3 +3,6 @@ CLAUDE.md
 VISUAL_IDENTITY.md
 SITE_ARCHITECTURE.md
 SITE_ARCHITECTURE.md.txt
+
+# OG image build template (export og-image.png separately and commit that)
+og-image.html
