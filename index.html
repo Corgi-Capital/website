@@ -143,13 +143,11 @@
       align-items: center;
       justify-content: center;
       opacity: 0;
-      transform: translateY(14px);
-      transition: opacity var(--trans), transform var(--trans);
+      transition: opacity var(--trans);
       pointer-events: none;
     }
     .panel.active {
       opacity: 1;
-      transform: translateY(0);
       pointer-events: auto;
     }
 
@@ -354,7 +352,7 @@
       * { animation: none !important; transition-duration: 0ms !important; }
       .top, .bottom, .corner { opacity: 1 !important; transform: none !important; }
       .divider { height: 48px !important; }
-      .panel { opacity: 0; transform: none; }
+      .panel { opacity: 0; }
       .panel.active { opacity: 1; }
       .pillar { opacity: 1; transform: none; }
     }
@@ -472,8 +470,8 @@
     function goToPillars() {
       if (scrollingToSection) return;
       scrollingToSection = true;
-      document.getElementById('pillars').scrollIntoView({ behavior: 'smooth' });
-      setTimeout(() => { scrollingToSection = false; }, 900);
+      document.getElementById('pillars').scrollIntoView({ behavior: 'instant' });
+      setTimeout(() => { scrollingToSection = false; }, 100);
     }
 
     const observer = new IntersectionObserver((entries) => {
@@ -528,12 +526,12 @@
       if (['ArrowDown','PageDown','Space'].includes(e.key)) {
         e.preventDefault();
         if (activeSection === 'hero' && current < stages.length - 1) { advanceStage(1); return; }
-        document.getElementById('pillars').scrollIntoView({ behavior: 'smooth' });
+        document.getElementById('pillars').scrollIntoView({ behavior: 'instant' });
       }
       if (['ArrowUp','PageUp'].includes(e.key)) {
         e.preventDefault();
         if (activeSection === 'hero' && current > 0) { advanceStage(-1); return; }
-        if (activeSection === 'pillars') document.getElementById('hero').scrollIntoView({ behavior: 'smooth' });
+        if (activeSection === 'pillars') document.getElementById('hero').scrollIntoView({ behavior: 'instant' });
       }
     });
 
