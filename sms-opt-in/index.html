@@ -3,10 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
   <title>SMS Alerts — Corgi Capital</title>
-  <meta name="description" content="Opt in to Corgi Capital Winston operational SMS alerts." />
+  <meta name="description" content="Request access to Corgi Capital Winston SMS alerts \u2014 operational notifications and notable trading activity." />
   <link rel="canonical" href="https://corgi-capital.com/sms-opt-in" />
   <style>
+    .private-banner {
+      border: 1px solid var(--gold);
+      background: rgba(201,165,90,0.05);
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-family: 'Inconsolata', monospace;
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--gold);
+      letter-spacing: 0.05em;
+    }
+    .private-banner .dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--gold);
+      margin-right: 8px;
+      vertical-align: middle;
+    }
     :root {
       --black:    #0b0b0b;
       --ivory:    #f0ece0;
@@ -190,46 +211,59 @@
   <div class="container">
     <div class="wordmark">Corgi Capital</div>
     <h1>Winston Alerts</h1>
-    <div class="subtitle">Operational SMS notifications</div>
+    <div class="subtitle">Operational notifications &amp; notable trading activity</div>
 
     <div class="rule"></div>
 
+    <div class="private-banner">
+      <span class="dot"></span>By invitation only &mdash; submissions are reviewed by the operator before activation.
+    </div>
+
     <div class="program-box">
       <div><span class="label">Program</span> Corgi Capital Winston Alerts</div>
-      <div><span class="label">Message Type</span> Operational alerts only</div>
+      <div><span class="label">Audience</span> Operator &amp; invited friends</div>
       <div><span class="label">Frequency</span> Up to 50 messages per month</div>
-      <div><span class="label">Content</span> Kill switch, trade audits, service health</div>
+      <div><span class="label">Content</span> System alerts &amp; notable trading activity</div>
       <div><span class="label">Support</span> bill@corgi-capital.com</div>
     </div>
 
     <form id="opt-in-form" method="post" action="#">
+      <div class="field">
+        <label for="name">Your name</label>
+        <input type="text" id="name" name="name" placeholder="Jane Doe" required>
+      </div>
+
       <div class="field">
         <label for="phone">Mobile phone number</label>
         <input type="tel" id="phone" name="phone" placeholder="+1 555 123 4567" required>
       </div>
 
       <div class="field">
-        <label for="email">Email (for account recovery)</label>
+        <label for="email">Email</label>
         <input type="email" id="email" name="email" placeholder="you@example.com" required>
       </div>
 
       <label class="consent">
         <input type="checkbox" id="consent" name="consent" required>
-        <span>I agree to receive Corgi Capital Winston operational SMS alerts at the number above, up to 50 messages per month. I understand message &amp; data rates may apply, and I can reply STOP at any time to unsubscribe or HELP for assistance. I have read and agree to the <a href="/terms">SMS Terms</a> and <a href="/privacy">Privacy Policy</a>.</span>
+        <span>I agree to receive Corgi Capital Winston SMS alerts at the number above &mdash; including operational notifications and notable trading activity updates &mdash; up to 50 messages per month. I understand message &amp; data rates may apply, and I can reply STOP at any time to unsubscribe or HELP for assistance. I have read and agree to the <a href="/terms">SMS Terms</a> and <a href="/privacy">Privacy Policy</a>.</span>
       </label>
 
       <div class="disclosure">
-        <p><strong>Program:</strong> Corgi Capital Winston Alerts &mdash; operational notifications for a private automated trading system.</p>
+        <p><strong>Program:</strong> Corgi Capital Winston Alerts &mdash; a private SMS program for the operator and a small invited group of friends.</p>
+        <p><strong>Content:</strong> Operational system notifications (kill switch, audit reviews, service health) and notable trading activity updates shared by the operator.</p>
         <p><strong>Frequency:</strong> Up to 50 SMS messages per month.</p>
         <p><strong>Message &amp; data rates may apply.</strong> Your mobile carrier may charge for incoming messages.</p>
         <p><strong>Opt out:</strong> Reply STOP to unsubscribe. Reply HELP for help. For support, email <a href="mailto:bill@corgi-capital.com">bill@corgi-capital.com</a>.</p>
+        <p><strong>Not financial advice:</strong> Trading activity updates are informational only and do not constitute investment advice, a recommendation, or a solicitation.</p>
         <p><strong>Terms:</strong> <a href="/terms">SMS Terms &amp; Conditions</a> &middot; <a href="/privacy">Privacy Policy</a></p>
       </div>
 
-      <button type="submit" class="submit">Subscribe to Alerts</button>
+      <button type="submit" class="submit">Request Access</button>
     </form>
 
     <a href="/" class="back-link">&larr; Back to Corgi Capital</a>
   </div>
+
+  <script src="submit.js"></script>
 </body>
 </html>
