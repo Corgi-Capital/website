@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SMS Alerts — Corgi Capital</title>
+  <meta name="description" content="Opt in to Corgi Capital Winston operational SMS alerts." />
+  <link rel="canonical" href="https://corgi-capital.com/sms-opt-in" />
+  <style>
+    :root {
+      --black:    #0b0b0b;
+      --ivory:    #f0ece0;
+      --gold:     #c9a55a;
+      --gold-dim: rgba(201,165,90,0.55);
+      --gold-line:rgba(201,165,90,0.22);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--black);
+      color: var(--ivory);
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      padding: 60px 20px;
+    }
+    .corner {
+      position: fixed;
+      width: 20px; height: 20px;
+    }
+    .c-tl { top: 18px; left: 18px;   border-top: 1px solid var(--gold-line); border-left:  1px solid var(--gold-line); }
+    .c-tr { top: 18px; right: 18px;  border-top: 1px solid var(--gold-line); border-right: 1px solid var(--gold-line); }
+    .c-bl { bottom: 18px; left: 18px;  border-bottom: 1px solid var(--gold-line); border-left:  1px solid var(--gold-line); }
+    .c-br { bottom: 18px; right: 18px; border-bottom: 1px solid var(--gold-line); border-right: 1px solid var(--gold-line); }
+    .grain {
+      position: fixed; inset: 0; z-index: 1;
+      opacity: 0.01;
+      pointer-events: none;
+    }
+    .container {
+      position: relative;
+      z-index: 2;
+      max-width: 560px;
+      margin: 0 auto;
+    }
+    .wordmark {
+      font-family: 'Inconsolata', monospace;
+      color: var(--gold);
+      letter-spacing: 0.24em;
+      font-size: 12px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    h1 {
+      font-family: 'Libre Baskerville', Georgia, serif;
+      font-weight: 400;
+      font-size: 28px;
+      color: var(--gold);
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-family: 'Inconsolata', monospace;
+      color: var(--gold-dim);
+      font-size: 13px;
+      margin-bottom: 28px;
+    }
+    .rule {
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--gold-line), transparent);
+      margin: 24px 0;
+    }
+    .program-box {
+      border: 1px solid var(--gold-line);
+      padding: 20px;
+      margin-bottom: 24px;
+      font-family: 'Inconsolata', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--ivory);
+    }
+    .program-box .label {
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-size: 11px;
+      display: inline-block;
+      width: 130px;
+    }
+    .field {
+      margin-bottom: 16px;
+    }
+    .field label {
+      display: block;
+      font-family: 'Inconsolata', monospace;
+      font-size: 11px;
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 6px;
+    }
+    .field input[type="tel"],
+    .field input[type="email"] {
+      width: 100%;
+      padding: 12px 14px;
+      background: transparent;
+      border: 1px solid var(--gold-line);
+      color: var(--ivory);
+      font-family: 'Inconsolata', monospace;
+      font-size: 14px;
+      outline: none;
+    }
+    .field input[type="tel"]:focus,
+    .field input[type="email"]:focus {
+      border-color: var(--gold);
+    }
+    .consent {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin: 24px 0;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 15px;
+      line-height: 1.55;
+    }
+    .consent input[type="checkbox"] {
+      margin-top: 4px;
+      width: 16px;
+      height: 16px;
+      accent-color: var(--gold);
+    }
+    .disclosure {
+      font-family: 'Inconsolata', monospace;
+      font-size: 11px;
+      color: var(--gold-dim);
+      line-height: 1.8;
+      padding: 16px 0;
+      border-top: 1px solid var(--gold-line);
+      border-bottom: 1px solid var(--gold-line);
+      margin: 24px 0;
+    }
+    .disclosure p { margin-bottom: 6px; }
+    .disclosure a {
+      color: var(--gold);
+      text-decoration: none;
+      border-bottom: 1px solid var(--gold-line);
+    }
+    .disclosure a:hover {
+      border-bottom-color: var(--gold);
+    }
+    .submit {
+      background: transparent;
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      padding: 14px 32px;
+      font-family: 'Inconsolata', monospace;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      cursor: pointer;
+      display: block;
+      width: 100%;
+      transition: all 0.25s ease;
+    }
+    .submit:hover {
+      background: var(--gold);
+      color: var(--black);
+    }
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 32px;
+      font-family: 'Inconsolata', monospace;
+      font-size: 11px;
+      color: var(--gold-dim);
+      text-decoration: none;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .back-link:hover {
+      color: var(--gold);
+    }
+  </style>
+</head>
+<body>
+  <div class="corner c-tl"></div>
+  <div class="corner c-tr"></div>
+  <div class="corner c-bl"></div>
+  <div class="corner c-br"></div>
+  <div class="grain"></div>
+
+  <div class="container">
+    <div class="wordmark">Corgi Capital</div>
+    <h1>Winston Alerts</h1>
+    <div class="subtitle">Operational SMS notifications</div>
+
+    <div class="rule"></div>
+
+    <div class="program-box">
+      <div><span class="label">Program</span> Corgi Capital Winston Alerts</div>
+      <div><span class="label">Message Type</span> Operational alerts only</div>
+      <div><span class="label">Frequency</span> Up to 50 messages per month</div>
+      <div><span class="label">Content</span> Kill switch, trade audits, service health</div>
+      <div><span class="label">Support</span> bill@corgi-capital.com</div>
+    </div>
+
+    <form id="opt-in-form" method="post" action="#">
+      <div class="field">
+        <label for="phone">Mobile phone number</label>
+        <input type="tel" id="phone" name="phone" placeholder="+1 555 123 4567" required>
+      </div>
+
+      <div class="field">
+        <label for="email">Email (for account recovery)</label>
+        <input type="email" id="email" name="email" placeholder="you@example.com" required>
+      </div>
+
+      <label class="consent">
+        <input type="checkbox" id="consent" name="consent" required>
+        <span>I agree to receive Corgi Capital Winston operational SMS alerts at the number above, up to 50 messages per month. I understand message &amp; data rates may apply, and I can reply STOP at any time to unsubscribe or HELP for assistance. I have read and agree to the <a href="/terms">SMS Terms</a> and <a href="/privacy">Privacy Policy</a>.</span>
+      </label>
+
+      <div class="disclosure">
+        <p><strong>Program:</strong> Corgi Capital Winston Alerts &mdash; operational notifications for a private automated trading system.</p>
+        <p><strong>Frequency:</strong> Up to 50 SMS messages per month.</p>
+        <p><strong>Message &amp; data rates may apply.</strong> Your mobile carrier may charge for incoming messages.</p>
+        <p><strong>Opt out:</strong> Reply STOP to unsubscribe. Reply HELP for help. For support, email <a href="mailto:bill@corgi-capital.com">bill@corgi-capital.com</a>.</p>
+        <p><strong>Terms:</strong> <a href="/terms">SMS Terms &amp; Conditions</a> &middot; <a href="/privacy">Privacy Policy</a></p>
+      </div>
+
+      <button type="submit" class="submit">Subscribe to Alerts</button>
+    </form>
+
+    <a href="/" class="back-link">&larr; Back to Corgi Capital</a>
+  </div>
+</body>
+</html>
