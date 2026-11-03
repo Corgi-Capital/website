@@ -32,6 +32,12 @@ Cost: DynamoDB on-demand plus Lambda; a few trips' worth of votes stays inside t
 
 Create a key with Maps JavaScript API, Places API (New), Routes API and Geocoding API, restricted to `https://corgi-capital.com/*`, and put it in the secret from step 1.
 
+## Google Maps budget
+
+The server keeps a monthly count of Google calls (Pacific-time months, matching Google billing) and refuses any photo lookup that would pass the limits: 950 photos and 4,800 searches by default, just under Google's free 1,000 and 5,000. Change them with `sam deploy --parameter-overrides PhotoMonthlyLimit=... SearchMonthlyLimit=...`. Check usage any time at `<VoteApiUrl>usage`.
+
+The count covers every trip page, since they share one key. It governs the pages; Google's own daily caps (set generously in the Cloud console) and a $5 budget alert stay in place as the backstop against anyone using the key outside the pages.
+
 ## Each new trip
 
 1. Copy `events/2026/niseko/` to a new folder, e.g. `events/2027/tokyo/`.

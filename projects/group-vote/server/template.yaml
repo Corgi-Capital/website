@@ -6,6 +6,14 @@ Parameters:
   AllowedOrigin:
     Type: String
     Default: https://corgi-capital.com
+  PhotoMonthlyLimit:
+    Type: Number
+    Default: 950
+    Description: Max Google Place photo loads per month (free allowance is 1,000)
+  SearchMonthlyLimit:
+    Type: Number
+    Default: 4800
+    Description: Max Google Places text searches per month (free allowance is 5,000)
   MapsKeySecretName:
     Type: String
     Default: group-vote/maps-api-key
@@ -38,6 +46,8 @@ Resources:
         Variables:
           TABLE_NAME: !Ref VotesTable
           MAPS_SECRET_ID: !Ref MapsKeySecretName
+          PHOTO_MONTHLY_LIMIT: !Ref PhotoMonthlyLimit
+          SEARCH_MONTHLY_LIMIT: !Ref SearchMonthlyLimit
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref VotesTable }
         - Statement:

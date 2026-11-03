@@ -4,10 +4,14 @@ Routes
   GET  /config                         -> {"ok": true, "mapsApiKey": "..."} (browser key, read from Secrets Manager)
   GET  /trips/{trip}?code=...          -> {"ok": true, "ballots": {name: {item_id: 0-3}}}
   POST /trips/{trip}/ballots           body {"code", "name", "votes"} -> same as GET
+  GET  /usage                          -> {"ok": true, "month": "YYYY-MM", "used": {...}, "limits": {...}}
+  POST /usage                          body {"kinds": ["search", "photo"]} -> {"ok": true} or 429 {"ok": false, "error": "limit"}
+                                       Reserves one unit of each kind against this month's Google Maps budget.
 
 Table layout (single table, on-demand)
   pk = "trip#<trip>", sk = "meta"          travelers [names], code_hash (sha256 hex), created
   pk = "trip#<trip>", sk = "ballot#<name>" votes {item_id: int}, updated
+  pk = "usage#<YYYY-MM>", sk = "<kind>"    count (Google Maps calls made this month, Pacific time like Google billing)
 """
 import hashlib
 import hmac
@@ -15,6 +19,8 @@ import json
 import os
 import re
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -25,6 +31,40 @@ _maps_key = {"value": None, "at": 0}
 TRIP_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 ITEM_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 MAX_ITEMS = 300
+# Monthly ceilings, kept just under Google's free monthly usage (Text Search Pro 5,000; Place Photos 1,000).
+LIMITS = {"search": int(os.environ.get("SEARCH_MONTHLY_LIMIT", "4800")), "photo": int(os.environ.get("PHOTO_MONTHLY_LIMIT", "950"))}
+CLIENT = boto3.client("dynamodb")
+
+
+def _month():
+    return datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m")
+
+
+def _usage():
+    month = _month()
+    used = {k: 0 for k in LIMITS}
+    for it in TABLE.query(KeyConditionExpression=Key("pk").eq(f"usage#{month}"))["Items"]:
+        if it["sk"] in used:
+            used[it["sk"]] = int(it.get("count", 0))
+    return {"ok": True, "month": month, "used": used, "limits": LIMITS}
+
+
+def _reserve(kinds):
+    """Atomically add one unit to each kind, refusing if any would pass its monthly limit."""
+    month = _month()
+    items = [{"Update": {
+        "TableName": TABLE.name,
+        "Key": {"pk": {"S": f"usage#{month}"}, "sk": {"S": k}},
+        "UpdateExpression": "ADD #c :one",
+        "ConditionExpression": "attribute_not_exists(#c) OR #c < :limit",
+        "ExpressionAttributeNames": {"#c": "count"},
+        "ExpressionAttributeValues": {":one": {"N": "1"}, ":limit": {"N": str(LIMITS[k])}},
+    }} for k in kinds]
+    try:
+        CLIENT.transact_write_items(TransactItems=items)
+        return True
+    except CLIENT.exceptions.TransactionCanceledException:
+        return False
 
 
 def _resp(status, body):
@@ -64,6 +104,18 @@ def _get_maps_key():
 def handler(event, _context):
     method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
     parts = [p for p in event.get("rawPath", "/").split("/") if p]
+    if parts == ["usage"]:
+        if method == "GET":
+            return _resp(200, _usage())
+        if method == "POST":
+            try:
+                kinds = json.loads(event.get("body") or "{}").get("kinds") or []
+            except (json.JSONDecodeError, AttributeError):
+                return _resp(400, {"ok": False, "error": "json"})
+            kinds = sorted(set(k for k in kinds if k in LIMITS))
+            if not kinds:
+                return _resp(400, {"ok": False, "error": "kinds"})
+            return _resp(200, {"ok": True}) if _reserve(kinds) else _resp(429, {"ok": False, "error": "limit"})
     if method == "GET" and parts == ["config"]:
         try:
             return _resp(200, {"ok": True, "mapsApiKey": _get_maps_key()})
