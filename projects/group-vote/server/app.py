@@ -5,7 +5,8 @@ Routes
   GET  /trips/{trip}?code=...          -> {"ok": true, "ballots": {name: {item_id: 0-3}}}
   POST /trips/{trip}/ballots           body {"code", "name", "votes"} -> same as GET
   GET  /usage                          -> {"ok": true, "month": "YYYY-MM", "used": {...}, "limits": {...}}
-  POST /usage                          body {"kinds": ["search", "photo"]} -> {"ok": true} or 429 {"ok": false, "error": "limit"}
+  POST /usage                          body {"kinds": ["search", "photo"]} -> {"ok": true}; 429 {"ok": false, "error": "limit"} only
+                                       when the month's budget is spent; 503 {"ok": false, "error": "busy"} on a passing error.
                                        Reserves one unit of each kind against this month's Google Maps budget.
 
 Table layout (single table, on-demand)
@@ -24,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 import boto3
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import BotoCoreError, ClientError
 
 TABLE = boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])
 SECRETS = boto3.client("secretsmanager")
@@ -33,7 +35,6 @@ ITEM_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 MAX_ITEMS = 300
 # Monthly ceilings, kept just under Google's free monthly usage (Text Search Pro 5,000; Place Photos 1,000).
 LIMITS = {"search": int(os.environ.get("SEARCH_MONTHLY_LIMIT", "4800")), "photo": int(os.environ.get("PHOTO_MONTHLY_LIMIT", "950"))}
-CLIENT = boto3.client("dynamodb")
 
 
 def _month():
@@ -49,22 +50,38 @@ def _usage():
     return {"ok": True, "month": month, "used": used, "limits": LIMITS}
 
 
+def _bump(month, kind, by, limit=None):
+    kw = {"Key": {"pk": f"usage#{month}", "sk": kind}, "UpdateExpression": "ADD #c :by",
+          "ExpressionAttributeNames": {"#c": "count"}, "ExpressionAttributeValues": {":by": by}}
+    if limit is not None:
+        kw["ConditionExpression"] = "attribute_not_exists(#c) OR #c < :limit"
+        kw["ExpressionAttributeValues"][":limit"] = limit
+    TABLE.update_item(**kw)
+
+
 def _reserve(kinds):
-    """Atomically add one unit to each kind, refusing if any would pass its monthly limit."""
-    month = _month()
-    items = [{"Update": {
-        "TableName": TABLE.name,
-        "Key": {"pk": {"S": f"usage#{month}"}, "sk": {"S": k}},
-        "UpdateExpression": "ADD #c :one",
-        "ConditionExpression": "attribute_not_exists(#c) OR #c < :limit",
-        "ExpressionAttributeNames": {"#c": "count"},
-        "ExpressionAttributeValues": {":one": {"N": "1"}, ":limit": {"N": str(LIMITS[k])}},
-    }} for k in kinds]
+    """Add one unit to each kind unless that would pass its monthly limit. True if reserved, False if the budget is spent.
+
+    One conditional update per kind, not a transaction: DynamoDB applies concurrent updates to an item one after
+    another, while concurrent TransactWriteItems on the same two counters cancel each other (TransactionConflict, about
+    9 in 10 in a burst), which the transaction version misreported as a spent budget. If a later kind is refused, the
+    earlier ones are handed back. Any other DynamoDB error is raised; the route answers 503 and the page retries.
+    """
+    month, taken = _month(), []
     try:
-        CLIENT.transact_write_items(TransactItems=items)
+        for k in kinds:
+            _bump(month, k, 1, LIMITS[k])
+            taken.append(k)
         return True
-    except CLIENT.exceptions.TransactionCanceledException:
-        return False
+    except (BotoCoreError, ClientError) as e:
+        for k in taken:
+            try:
+                _bump(month, k, -1)
+            except (BotoCoreError, ClientError):
+                pass  # the count stays one high: the safe direction for a budget
+        if isinstance(e, ClientError) and e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
 
 
 def _resp(status, body):
@@ -115,7 +132,11 @@ def handler(event, _context):
             kinds = sorted(set(k for k in kinds if k in LIMITS))
             if not kinds:
                 return _resp(400, {"ok": False, "error": "kinds"})
-            return _resp(200, {"ok": True}) if _reserve(kinds) else _resp(429, {"ok": False, "error": "limit"})
+            try:
+                reserved = _reserve(kinds)
+            except (BotoCoreError, ClientError):
+                return _resp(503, {"ok": False, "error": "busy"})  # not a budget answer: the page retries
+            return _resp(200, {"ok": True}) if reserved else _resp(429, {"ok": False, "error": "limit"})
     if method == "GET" and parts == ["config"]:
         try:
             return _resp(200, {"ok": True, "mapsApiKey": _get_maps_key()})

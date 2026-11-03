@@ -50,33 +50,58 @@ const photos={};
 const status=t=>{$("#status").textContent=t};
 const voted=()=>Object.keys(ballots).filter(n=>Object.keys(ballots[n]||{}).length).length+" of "+TRAVELERS.length+" have voted";
 
-// ---------- Votes API ----------
+// ---------- Vote server ----------
+// Lambda answers 429 "Rate Exceeded" (not our JSON) when its concurrency cap of 5 is busy, e.g. several people opening
+// the page at once. That, network errors and 5xx are retried with backoff. Whatever the server itself says comes back
+// as-is (it always sends {"ok": ...}); null means it never answered.
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function api(path,opts){
+  for(let i=0;;i++){
+    try{ const r=await fetch(CFG.apiUrl.replace(/\/$/,"")+path,opts);
+      if(r.status<500){ const j=await r.json().catch(()=>null); if(j&&typeof j.ok==="boolean") return j } }catch(e){}
+    if(i===3) return null;
+    await wait(300*2**i+Math.random()*300);
+  }
+}
+const post=(path,body)=>api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+
+// ---------- Votes ----------
+let unsent=false;   // my ballot has changes the server hasn't taken yet: sent after the next successful load
 async function loadVotes(){
   if(!CFG.apiUrl){ status("Votes save on this device only (backend not set up)"); return }
   if(!code){ $("#codeBanner").hidden=false; status("Enter the trip code"); return }
-  try{
-    const r=await fetch(CFG.apiUrl.replace(/\/$/,"")+"/trips/"+encodeURIComponent(TRIP.id)+"?code="+encodeURIComponent(code));
-    const j=await r.json();
-    if(!j.ok){ if(j.error==="code"){ ls("code",null); code=""; $("#codeBanner").hidden=false; status("Wrong trip code") } else status("Vote server error"); return }
-    $("#codeBanner").hidden=true;
-    const mine=(online&&me)?ballots[me]:null; online=true; ballots=j.ballots||{}; if(mine) ballots[me]=mine;
-    status(voted()); render();
-  }catch(e){ status("Can't reach the vote server right now") }
+  const j=await api("/trips/"+encodeURIComponent(TRIP.id)+"?code="+encodeURIComponent(code));
+  if(!j){ status("Can't reach the vote server right now"); return }
+  if(!j.ok){ if(j.error==="code"){ ls("code",null); code=""; $("#codeBanner").hidden=false; status("Wrong trip code") } else status("Vote server error"); return }
+  $("#codeBanner").hidden=true;
+  // Online, my in-page ballot wins over the copy just read. Coming online with votes cast before the server answered,
+  // those are laid over the saved ballot rather than replacing it.
+  const mine=(me&&(online||unsent))?ballots[me]:null, was=online; online=true; ballots=j.ballots||{};
+  if(mine) ballots[me]=was?mine:Object.assign({},ballots[me]||{},mine);
+  status(voted()); render();
+  if(unsent){ unsent=false; saveVote() }
 }
 function saveVote(){
-  const who=me, votes=ballots[me]||{};
-  if(!online){ ls("local-"+who, JSON.stringify(votes)); return }
-  pending=pending.then(()=>fetch(CFG.apiUrl.replace(/\/$/,"")+"/trips/"+encodeURIComponent(TRIP.id)+"/ballots",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,name:who,votes})})
-    .then(r=>r.json()).then(j=>{ if(j.ok){ ballots=Object.assign({},j.ballots,{[who]:ballots[who]}); status(voted()); render() } else status("Couldn't save that vote") }))
-    .catch(()=>status("Couldn't save that vote. Try again."));
+  const who=me;
+  if(!online){ ls("local-"+who, JSON.stringify(ballots[who]||{})); if(CFG.apiUrl) unsent=true; return }
+  pending=pending.then(()=>post("/trips/"+encodeURIComponent(TRIP.id)+"/ballots",{code,name:who,votes:ballots[who]||{}})).then(j=>{
+    if(j&&j.ok){ ballots=Object.assign({},j.ballots,{[who]:ballots[who]}); status(voted()); render() }
+    else if(!j){ unsent=true; status("Vote not saved yet. Retrying shortly.") }
+    else status("Couldn't save that vote") }).catch(()=>{});
 }
 
 // ---------- Photos (Google Maps Places API) ----------
-let placesLib=null;
+// Google calls are counted against the server's monthly budget. A text search is reserved just before it runs, and a
+// photo only once the search has found one, so a failed or empty search never spends photo budget. Lookups go one at
+// a time until one works, then three at once, and stop for this page view if Google fails before any success (or three
+// times running): a dead or misconfigured key then costs one search per view, not a search and a photo per item.
+let placesLib=null, budgetSpent=false, mapsDown=false, worked=0, failRun=0, active=0;
+const queue=[], tried={};
+window.gm_authFailure=()=>{ mapsDown=true };
 async function getMapsKey(){
   if(CFG.mapsApiKey) return CFG.mapsApiKey;
   if(!CFG.apiUrl) return "";
-  try{ const j=await (await fetch(CFG.apiUrl.replace(/\/$/,"")+"/config")).json(); return (j&&j.ok&&j.mapsApiKey)||"" }catch(e){ return "" }
+  const j=await api("/config"); return (j&&j.ok&&j.mapsApiKey)||"";
 }
 function loadMaps(){
   return getMapsKey().then(key=>{ CFG.mapsApiKey=key; return new Promise((res,rej)=>{
@@ -87,42 +112,56 @@ function loadMaps(){
     s.async=true; s.onerror=()=>rej(new Error("maps load failed")); document.head.appendChild(s);
   }) });
 }
-const io=("IntersectionObserver" in window)?new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ io.unobserve(e.target); fetchPhoto(e.target.dataset.id) } }),{rootMargin:"400px"}):null;
-const inflight={};
+const io=("IntersectionObserver" in window)?new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ io.unobserve(e.target); wantPhoto(e.target.dataset.id) } }),{rootMargin:"400px"}):null;
 const byId=id=>ITEMS.find(i=>i.id===id);
-// Every Google call is reserved against the server's monthly budget first; once it's spent, items keep their illustrations.
-let budgetSpent=false;
-async function reserve(kinds){
+// Only the server's own "limit" answer means the budget is spent; a throttle or network error is just a failed try.
+async function reserve(kind){
   if(budgetSpent||!CFG.apiUrl) return false;
-  try{
-    const r=await fetch(CFG.apiUrl.replace(/\/$/,"")+"/usage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kinds})});
-    if(r.status===429){ budgetSpent=true; const b=$("#setupBanner"); b.hidden=false; b.textContent="This month's photo budget is used up, so items show illustrations until next month."; return false }
-    return r.ok;
-  }catch(e){ return false }
+  const j=await post("/usage",{kinds:[kind]});
+  if(j&&j.ok) return true;
+  if(j&&j.error==="limit"&&!budgetSpent){ budgetSpent=true; const b=$("#setupBanner"); b.hidden=false; b.textContent="This month's photo budget is used up, so items show illustrations until next month." }
+  return false;
 }
-async function fetchPhoto(id){
-  const it=byId(id);
-  if(!placesLib||photos[id]||inflight[id]||!it||!it.q) return;
-  inflight[id]=true;
-  try{
-    if(!(await reserve(["search","photo"]))) return;
-    const {places}=await placesLib.Place.searchByText({textQuery:it.q, fields:["displayName","photos","googleMapsURI"], maxResultCount:1, language:"en", region:TRIP.region||"us"});
-    const p=places&&places[0], ph=p&&p.photos&&p.photos[0];
-    if(ph){
-      const a=(ph.authorAttributions||[])[0]||{};
-      photos[id]={url:ph.getURI({maxWidth:400,maxHeight:400}), credit:a.displayName||"Google Maps user", creditUrl:a.uri||"", mapsUrl:p.googleMapsURI||""};
-      paintPhoto(id);
-    }
-  }catch(e){}
+function wantPhoto(id){ if(tried[id]) return; tried[id]=true; queue.push(id); pumpPhotos() }
+function pumpPhotos(){
+  while(placesLib&&!mapsDown&&!budgetSpent&&queue.length&&active<(worked?3:1)){
+    const id=queue.shift(); active++;
+    lookUp(id).catch(()=>{}).finally(()=>{ active--; pumpPhotos() });
+  }
 }
-function paintPhoto(id){
+async function lookUp(id){
+  const it=byId(id); if(!it||!it.q) return;
+  if(!(await reserve("search"))){ delete tried[id]; return }   // no go-ahead: a later render can try again
+  let p;
+  try{ const r=await placesLib.Place.searchByText({textQuery:it.q, fields:["displayName","photos","googleMapsURI"], maxResultCount:1, language:"en", region:TRIP.region||"us"}); p=r.places&&r.places[0]; worked++; failRun=0 }
+  catch(e){ if(!worked||++failRun>=3) mapsDown=true; return }
+  const ph=p&&p.photos&&p.photos[0];
+  if(!ph) return;   // nothing to show: the illustration stays
+  if(!(await reserve("photo"))){ delete tried[id]; return }
+  const a=(ph.authorAttributions||[])[0]||{};
+  photos[id]={url:ph.getURI({maxWidth:400,maxHeight:400}), credit:a.displayName||"Google Maps user", creditUrl:a.uri||"", mapsUrl:p.googleMapsURI||""};
+  paintPhoto(id);
+}
+// Paints every tile on the page for this item (after a lookup), or the one tile row() is building: that tile isn't in
+// the document yet, so a document query would miss it and every re-render would drop the photos.
+function paintPhoto(id,tile){
   const ph=photos[id]; if(!ph) return;
-  document.querySelectorAll('.pic[data-id="'+id+'"]').forEach(pic=>{
-    if(!pic.querySelector("img")){ pic.textContent=""; const img=el("img"); img.src=ph.url; img.alt=""; img.loading="lazy"; img.referrerPolicy="no-referrer"; pic.appendChild(img) }
-    const cr=pic.parentElement.querySelector(".credit");
-    if(cr&&!cr.childNodes.length){ cr.appendChild(document.createTextNode("Photo: ")); const a=el("a",null,ph.credit); a.href=ph.creditUrl||ph.mapsUrl||"#"; a.target="_blank"; a.rel="noopener"; cr.appendChild(a);
-      if(ph.mapsUrl){ cr.appendChild(document.createTextNode(" · ")); const m=el("a",null,"Google Maps"); m.href=ph.mapsUrl; m.target="_blank"; m.rel="noopener"; cr.appendChild(m) } }
+  (tile?[tile]:document.querySelectorAll('.pic[data-id="'+id+'"]')).forEach(pic=>{
+    if(pic.querySelector("img")) return;
+    // Keep the default referrer: the photo URL carries the key, which Google only honors from corgi-capital.com.
+    // The illustration stays until the photo has loaded (at once when it's cached), and for good if it fails.
+    const img=el("img"); img.alt="";
+    const show=()=>{ if(pic.querySelector("img")) return; pic.textContent=""; pic.appendChild(img); credit(pic,ph) };
+    img.onerror=()=>{ photos[id]=null };
+    if(ph.loaded){ img.src=ph.url; show() }
+    else { img.onload=()=>{ ph.loaded=true; show() }; img.src=ph.url }
   });
+}
+function credit(pic,ph){
+  const cr=pic.parentElement.querySelector(".credit");
+  if(!cr||cr.childNodes.length) return;
+  cr.appendChild(document.createTextNode("Photo: ")); const a=el("a",null,ph.credit); a.href=ph.creditUrl||ph.mapsUrl||"#"; a.target="_blank"; a.rel="noopener"; cr.appendChild(a);
+  if(ph.mapsUrl){ cr.appendChild(document.createTextNode(" · ")); const m=el("a",null,"Google Maps"); m.href=ph.mapsUrl; m.target="_blank"; m.rel="noopener"; cr.appendChild(m) }
 }
 
 // ---------- Render ----------
@@ -161,7 +200,7 @@ function row(it){
     const mine=me&&ballots[me]?ballots[me][it.id]:undefined; b.setAttribute("aria-pressed",String(mine===v));
     b.disabled=!me; b.onclick=()=>cast(it.id,v); vote.appendChild(b)});
   r.appendChild(vote);
-  if(photos[it.id]) paintPhoto(it.id); else if(io) io.observe(pic); else fetchPhoto(it.id);
+  if(photos[it.id]) paintPhoto(it.id,pic); else if(!tried[it.id]){ if(io) io.observe(pic); else wantPhoto(it.id) }
   return r;
 }
 function render(){
@@ -188,6 +227,7 @@ render();
 const missing=[]; if(!CFG.apiUrl) missing.push("the vote server (shared votes and photos)");
 if(missing.length){ const b=$("#setupBanner"); b.hidden=false; b.textContent="Setup pending: "+missing.join(" and ")+". Until then the page shows illustrations and keeps votes on this device." }
 loadVotes();
-loadMaps().then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; document.querySelectorAll(".pic[data-id]").forEach(p=>{ if(io){ io.unobserve(p); io.observe(p) } else fetchPhoto(p.dataset.id) }) }).catch(()=>{});
-setInterval(()=>{ if(online&&document.visibilityState==="visible") loadVotes() },30000);
+loadMaps().then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; pumpPhotos() }).catch(()=>{});
+// Keeps polling while a code is set, so a page that couldn't reach the server at first catches up on its own.
+setInterval(()=>{ if(code&&CFG.apiUrl&&document.visibilityState==="visible") loadVotes() },30000);
 })();

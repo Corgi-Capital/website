@@ -26,6 +26,12 @@ sam build && sam deploy --guided   # stack name: group-vote, region us-east-1; a
 
 Copy the `VoteApiUrl` output into `web/group-vote-config.js` as `apiUrl`. Note the `TableName` output.
 
+To ship a later change to `app.py`, build outside any OneDrive-synced folder: OneDrive locks `.aws-sam/build`, so `sam build` fails with "Access is denied", and a deploy from the half-cleaned folder uploads an empty package (CloudFormation rolls it back).
+
+```bash
+sam build --build-dir <dir outside OneDrive> && sam deploy --template-file <that dir>/template.yaml --stack-name group-vote --region us-east-1 --capabilities CAPABILITY_IAM --resolve-s3
+```
+
 Cost: DynamoDB on-demand plus Lambda; a few trips' worth of votes stays inside the AWS free tier. Concurrency is capped at 5.
 
 **3. Google Maps key**
@@ -35,6 +41,8 @@ Create a key with Maps JavaScript API, Places API (New), Routes API and Geocodin
 ## Google Maps budget
 
 The server keeps a monthly count of Google calls (Pacific-time months, matching Google billing) and refuses any photo lookup that would pass the limits: 950 photos and 4,800 searches by default, just under Google's free 1,000 and 5,000. Change them with `sam deploy --parameter-overrides PhotoMonthlyLimit=... SearchMonthlyLimit=...`. Check usage any time at `<VoteApiUrl>usage`.
+
+The page reserves a search just before it runs and a photo only once a search finds one. If Google fails before any lookup works, it stops looking for the rest of that page view, so a broken key costs one search per view. Photos load once per page view, so a 32-item page uses its 950 photos in about 29 fully scrolled views a month across the whole group; raise `PhotoMonthlyLimit` if that's too few (Google bills photos past its free 1,000).
 
 The count covers every trip page, since they share one key. It governs the pages; Google's own daily caps (set generously in the Cloud console) and a $5 budget alert stay in place as the backstop against anyone using the key outside the pages.
 
