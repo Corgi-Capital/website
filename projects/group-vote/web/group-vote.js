@@ -90,11 +90,22 @@ function loadMaps(){
 const io=("IntersectionObserver" in window)?new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ io.unobserve(e.target); fetchPhoto(e.target.dataset.id) } }),{rootMargin:"400px"}):null;
 const inflight={};
 const byId=id=>ITEMS.find(i=>i.id===id);
+// Every Google call is reserved against the server's monthly budget first; once it's spent, items keep their illustrations.
+let budgetSpent=false;
+async function reserve(kinds){
+  if(budgetSpent||!CFG.apiUrl) return false;
+  try{
+    const r=await fetch(CFG.apiUrl.replace(/\/$/,"")+"/usage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kinds})});
+    if(r.status===429){ budgetSpent=true; const b=$("#setupBanner"); b.hidden=false; b.textContent="This month's photo budget is used up, so items show illustrations until next month."; return false }
+    return r.ok;
+  }catch(e){ return false }
+}
 async function fetchPhoto(id){
   const it=byId(id);
   if(!placesLib||photos[id]||inflight[id]||!it||!it.q) return;
   inflight[id]=true;
   try{
+    if(!(await reserve(["search","photo"]))) return;
     const {places}=await placesLib.Place.searchByText({textQuery:it.q, fields:["displayName","photos","googleMapsURI"], maxResultCount:1, language:"en", region:TRIP.region||"us"});
     const p=places&&places[0], ph=p&&p.photos&&p.photos[0];
     if(ph){
