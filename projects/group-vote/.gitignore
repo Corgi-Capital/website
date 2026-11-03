@@ -1,3 +1,5 @@
 __pycache__/
 .aws-sam/
 samconfig.toml
+# Trip page data (titles, travelers, items): the vote server sends it only with the trip password, so it stays out of this public repo
+trips/

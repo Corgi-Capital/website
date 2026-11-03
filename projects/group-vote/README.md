@@ -2,9 +2,12 @@
 
 Reusable ballot for group trip planning: each traveler marks items Must / Keen / Maybe / Skip, the list re-ranks by group total, and each item shows a live Google Maps photo.
 
+Each trip sits behind a password. The public page holds only the trip id and shows a password gate in the corgi-capital.com home page style; the server sends the page data (title, travelers, items), the votes and the Maps key once the password checks out. The browser remembers the password until someone taps "Lock this page".
+
 - `web/`: the page engine (`group-vote.js`, `group-vote.css`) and shared settings (`group-vote-config.js`). Served by GitHub Pages.
-- `server/`: AWS SAM app. One Lambda function URL and one DynamoDB table hold every trip's votes.
-- Trip pages live under `events/` (first one: `events/2026/niseko/`). Each defines `window.TRIP` and loads the engine.
+- `server/`: AWS SAM app. One Lambda function URL and one DynamoDB table hold every trip's page data, password hash and votes.
+- `trips/<id>.json`: each trip's page data. Git ignores this folder because the repo is public; `trip.example.json` shows the format.
+- Trip pages live under `events/` (first one: `events/2026/niseko/`). Each sets `window.TRIP = { id: "..." }` and loads the engine.
 
 ## One-time setup
 
@@ -15,7 +18,7 @@ aws secretsmanager create-secret --region us-east-1 --name group-vote/maps-api-k
 # to rotate later: aws secretsmanager put-secret-value --region us-east-1 --secret-id group-vote/maps-api-key --secret-string "<new key>"
 ```
 
-The key is a browser key: it still reaches every visitor's browser (via the server's `/config` route). Keeping it in Secrets Manager keeps it out of the public repo and lets you rotate it without a commit. Its real protection is the referrer restriction to `https://corgi-capital.com/*`. Cost: $0.40 a month for the secret.
+The key is a browser key: it reaches the browser of everyone who enters a trip's password (the server sends it with the trip). Keeping it in Secrets Manager keeps it out of the public repo and lets you rotate it without a commit. Its real protection is the referrer restriction to `https://corgi-capital.com/*`. Cost: $0.40 a month for the secret.
 
 **2. Vote server (AWS)**
 
@@ -44,16 +47,17 @@ The server keeps a monthly count of Google calls (Pacific-time months, matching 
 
 The page reserves a search just before it runs and a photo only once a search finds one. If Google fails before any lookup works, it stops looking for the rest of that page view, so a broken key costs one search per view. Photos load once per page view, so a 32-item page uses its 950 photos in about 29 fully scrolled views a month across the whole group; raise `PhotoMonthlyLimit` if that's too few (Google bills photos past its free 1,000).
 
-The count covers every trip page, since they share one key. It governs the pages; Google's own daily caps (set generously in the Cloud console) and a $5 budget alert stay in place as the backstop against anyone using the key outside the pages.
+The count covers every trip page, since they share one key. Reserving needs a trip's password, so strangers can't spend the budget. It governs the pages; Google's own daily caps (set generously in the Cloud console) and a $5 budget alert stay in place as the backstop against anyone using the key outside the pages.
 
 ## Each new trip
 
-1. Copy `events/2026/niseko/` to a new folder, e.g. `events/2027/tokyo/`.
-2. In its `index.html`, set `id`, `title`, `intro`, `travelers`, `region` (country code for photo search), `regions`, and `items`. Each item has an `art` key (illustration shown until the photo loads; see `ART` in `web/group-vote.js`) and a `q` Google Maps search string.
-3. Register the trip and its code:
+1. Write `trips/<id>.json` (start from `trip.example.json`): `id`, `title`, `intro`, `travelers`, `region` (country code for photo search), `regions`, and `items`. Each item has an `art` key (illustration shown until the photo loads; see `ART` in `web/group-vote.js`) and a `q` Google Maps search string.
+2. Upload it with a password:
    ```bash
-   python server/create_trip.py --table <TableName> --trip tokyo-2027 --travelers "A,B,C" --code <code>
+   python server/create_trip.py --table <TableName> --file trips/tokyo-2027.json --code "<password>"
    ```
-4. Push. Share the URL and the code.
+   After editing the file, run it again without `--code` to keep the password; with `--code` to change it. Ballots are kept either way. `--export <id>` prints the server's copy if the file goes missing.
+3. Copy `events/2026/niseko/index.html` to a new folder, e.g. `events/2027/tokyo/`, and set its `id`.
+4. Push. Share the URL and the password.
 
-Votes are protected by the trip code (stored hashed). It keeps out strangers, not determined attackers; don't put anything private in a ballot.
+The password is stored hashed and matches in any letter case, since phones capitalize the first letter. It's one shared password, not accounts: anyone who has it can see the page and vote under any traveler's name. Don't put anything in a trip you couldn't stand to have forwarded.

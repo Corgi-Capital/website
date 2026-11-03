@@ -1,4 +1,5 @@
-/* Layout: a single scrolling ballot. Sticky voter bar on top, items as ruled rows grouped by region, tallies on the right. */
+/* Layout: a single scrolling ballot. Sticky voter bar on top, items as ruled rows grouped by region, tallies on the right.
+   Before the password: a full-screen gate in the corgi-capital.com home page style (bottom of this file). */
 :root{
   --bg:#f3f6f8; --surface:#ffffff; --ink:#14212b; --muted:#5d6e7a; --line:#d9e1e7;
   --accent:#1d5d86; --accent-ink:#ffffff; --miso:#b86f1c; --must:#1d5d86; --keen:#4f8fb5; --maybe:#a9c3d4; --skip:#c9cfd4;
@@ -70,6 +71,74 @@ h2{font-family:var(--display);font-weight:700;font-size:18px;margin:28px 0 6px;p
 .credit a{color:var(--muted)}
 .banner{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--muted);margin-top:14px}
 .banner[hidden]{display:none}
-.codebox{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-.codebox input{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
 .gattr{font-size:11px;color:var(--muted);margin-top:24px}
+.gattr .lock{background:none;border:0;padding:0;margin-left:6px;font-size:inherit;color:var(--muted);text-decoration:underline;text-underline-offset:2px}
+.gv-ballot{animation:gvShow .4s ease}
+@keyframes gvShow{from{opacity:0}}
+
+/* ---------- Password gate: the home page's palette, type and motion (see VISUAL_IDENTITY.md) ---------- */
+body.gv-locked{margin:0;background:#0b0b0b;color:#f0ece0;color-scheme:dark}
+.gate,.gate *,.gate ::before,.gate ::after{box-sizing:border-box}
+body.gv-locked::before{background:#0b0b0b}
+.gate{--g-ivory:#f0ece0;--g-gold:#c9a55a;--g-dim:rgba(201,165,90,.55);--g-line:rgba(201,165,90,.22);--g-ease:cubic-bezier(.16,1,.3,1);
+  position:relative;min-height:100vh;min-height:100dvh;display:grid;grid-template-rows:auto 1fr auto;
+  padding:max(clamp(24px,4vw,48px),env(safe-area-inset-top,0px)) max(clamp(32px,6vw,80px),env(safe-area-inset-right,0px)) max(clamp(24px,4vw,48px),env(safe-area-inset-bottom,0px)) max(clamp(32px,6vw,80px),env(safe-area-inset-left,0px));
+  color:var(--g-ivory);font-family:"Cormorant Garamond",Georgia,serif;-webkit-font-smoothing:antialiased;transition:opacity .35s ease}
+.gate.leaving{opacity:0}
+.gate-field,.gate-grain{position:fixed;inset:0;pointer-events:none}
+.gate-field{z-index:0}
+.gate-grain{z-index:1;opacity:.01;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.gate-top,.gate-center,.gate-bottom{position:relative;z-index:2}
+.gate-corner{position:fixed;z-index:3;width:20px;height:20px;opacity:0;animation:gvFadeIn 1s ease 1s forwards}
+.gate-corner.tl{top:18px;left:18px;border-top:1px solid var(--g-line);border-left:1px solid var(--g-line)}
+.gate-corner.tr{top:18px;right:18px;border-top:1px solid var(--g-line);border-right:1px solid var(--g-line)}
+.gate-corner.bl{bottom:18px;left:18px;border-bottom:1px solid var(--g-line);border-left:1px solid var(--g-line)}
+.gate-corner.br{bottom:18px;right:18px;border-bottom:1px solid var(--g-line);border-right:1px solid var(--g-line)}
+.gate-top,.gate-bottom{display:flex;justify-content:space-between;gap:16px;font-family:"Inconsolata",monospace;text-transform:uppercase;font-size:clamp(9px,.78vw,11px);color:var(--g-dim);opacity:0}
+.gate-top{align-items:flex-start;letter-spacing:.2em;animation:gvFadeUp 1s var(--g-ease) .15s forwards}
+.gate-bottom{align-items:flex-end;letter-spacing:.18em;animation:gvFadeUp 1s var(--g-ease) .25s forwards}
+.gate-mark{position:relative;color:var(--g-gold);letter-spacing:.24em;text-decoration:none}
+.gate-coords{position:relative;line-height:1.9}
+.gate-mark:hover::after,.gate-coords:hover::after{content:" \1F43E";font-size:10px;filter:sepia(1) saturate(3) brightness(2) hue-rotate(5deg)}
+.gate-contact{position:relative;color:var(--g-dim);text-decoration:none;padding-bottom:2px;transition:color .25s ease}
+.gate-contact::after{content:"";position:absolute;left:0;bottom:0;width:0;height:1px;background:var(--g-gold);transition:width .4s var(--g-ease)}
+.gate-contact:hover{color:var(--g-gold)}
+.gate-contact:hover::after{width:100%}
+.gate-contact:hover::before{content:"\1F43E  ";font-size:10px;filter:sepia(1) saturate(3) brightness(2) hue-rotate(5deg)}
+.gate-center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-block:32px;transform:translateY(-3vh)}
+.gate-line{width:1px;height:0;background:linear-gradient(to bottom,transparent,rgba(201,165,90,.7),transparent);animation:gvGrow 1s var(--g-ease) forwards}
+.gate-line.top{margin-bottom:32px;animation-delay:.5s}
+.gate-line.bottom{margin-top:32px;animation-delay:1.1s}
+.gate-title{margin:0;font-family:"Cormorant Garamond",Georgia,serif;font-weight:600;font-size:clamp(44px,7.2vw,116px);line-height:.9;letter-spacing:.06em;text-transform:uppercase;text-wrap:balance;opacity:0;animation:gvFadeUp 1s var(--g-ease) .3s forwards}
+.gate-gold{margin:.22em 0 0;font-family:"Libre Baskerville",Georgia,serif;font-style:italic;font-weight:400;font-size:clamp(34px,5.4vw,88px);line-height:1;letter-spacing:.01em;color:var(--g-gold);opacity:0;animation:gvFadeUp 1s var(--g-ease) .45s forwards}
+.gate-form{display:flex;align-items:baseline;gap:20px;width:min(340px,100%);margin-top:40px;opacity:0;animation:gvFadeUp 1s var(--g-ease) .7s forwards}
+.gate-form[hidden]{display:none}
+.gate-form input{flex:1;min-width:0;background:transparent;border:0;border-bottom:1px solid var(--g-line);border-radius:0;padding:8px 2px;color:var(--g-ivory);caret-color:var(--g-gold);font:400 16px/1.3 "Inconsolata",monospace;letter-spacing:.2em;outline:none;transition:border-color .25s ease}
+.gate-form input::placeholder{color:var(--g-dim);font-size:11px;letter-spacing:.2em;text-transform:uppercase}
+.gate-form input:focus{border-bottom-color:var(--g-gold)}
+.gate-form input::selection{background:rgba(201,165,90,.35);color:#f0ece0}
+.gate-form input:-webkit-autofill{-webkit-text-fill-color:#f0ece0;-webkit-box-shadow:0 0 0 40px #0b0b0b inset}
+.gate-form button{position:relative;background:none;border:0;border-radius:0;padding:8px 0;color:var(--g-dim);font:400 11px/1.3 "Inconsolata",monospace;letter-spacing:.2em;text-transform:uppercase;transition:color .25s ease}
+.gate-form button::after{content:"";position:absolute;left:0;bottom:4px;width:0;height:1px;background:var(--g-gold);transition:width .4s var(--g-ease)}
+.gate-form button:hover,.gate-form button:focus-visible{color:var(--g-gold);outline:none}
+.gate-form button:hover::after,.gate-form button:focus-visible::after{width:100%}
+.gate-form button:disabled{opacity:.5;cursor:default}
+.gate-msg{min-height:1.9em;margin:20px 0 0;font:400 11px/1.9 "Inconsolata",monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--g-ivory);opacity:0;animation:gvFadeUp 1s var(--g-ease) .7s forwards}
+@keyframes gvFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes gvFadeIn{from{opacity:0}to{opacity:.75}}
+@keyframes gvGrow{to{height:48px}}
+@media (max-width:640px){
+  .gate{padding:max(28px,env(safe-area-inset-top,0px)) 32px max(28px,env(safe-area-inset-bottom,0px))}
+  .gate-title{font-size:clamp(30px,9.2vw,60px);line-height:.93}
+  .gate-gold{font-size:clamp(28px,8.4vw,52px)}
+  .gate-line.top{margin-bottom:24px}
+  .gate-line.bottom{margin-top:24px}
+  .gate-grain{opacity:.045}
+  .gate-corner{width:14px;height:14px}
+}
+@media (prefers-reduced-motion:reduce){
+  .gate,.gate *,.gv-ballot{animation:none!important;transition-duration:0ms!important}
+  .gate-top,.gate-bottom,.gate-title,.gate-gold,.gate-form,.gate-msg{opacity:1}
+  .gate-corner{opacity:.75}
+  .gate-line{height:48px}
+}

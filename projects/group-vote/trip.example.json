@@ -1,0 +1,13 @@
+{
+ "id": "example-2027",
+ "title": "Example Trip Vote",
+ "intro": "One paragraph shown under the title once the password is in.",
+ "travelers": ["Ana", "Ben", "Cy"],
+ "region": "jp",
+ "scoreLabel": "Tabelog",
+ "regions": ["Day one", "Sweets & drinks"],
+ "items": [
+  {"id": "noodles", "art": "miso", "q": "Example Noodle House", "r": "Day one", "dish": "Miso ramen", "place": "Example Noodle House", "area": "Old town", "score": "3.80", "badge": "Ramen top 100", "note": "Walk-in, closed Mon.", "url": "https://tabelog.com/en/"},
+  {"id": "bar", "art": "cocktail", "q": "Example Cocktail Bar", "r": "Sweets & drinks", "dish": "Cocktail bar", "place": "Example Cocktail Bar", "area": "Harbor", "score": "n/a", "badge": "", "note": "", "url": ""}
+ ]
+}

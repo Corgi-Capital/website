@@ -1,11 +1,12 @@
 /* Group Vote: reusable ballot for group trips.
-   A trip page defines window.TRIP (see events/2026/niseko/index.html) and loads this file.
-   Shared settings (API URL, Maps key) live in group-vote-config.js. */
+   A trip page sets window.TRIP = {id: "..."} and loads this file (see events/2026/niseko/index.html). The trip's title,
+   travelers, items and votes come from the vote server, which sends them only with the trip's password: until then the
+   page is a password gate in the corgi-capital.com home page style. The server's URL is in group-vote-config.js. */
 (function(){
 "use strict";
-const CFG=Object.assign({apiUrl:"",mapsApiKey:""},window.GROUP_VOTE||{},(window.TRIP&&window.TRIP.config)||{});
-const TRIP=window.TRIP;
-const TRAVELERS=TRIP.travelers, ITEMS=TRIP.items, REGIONS=TRIP.regions;
+const CFG=Object.assign({apiUrl:""},window.GROUP_VOTE||{});
+const TRIP_ID=String((window.TRIP&&window.TRIP.id)||"");
+let TRIP={}, TRAVELERS=[], ITEMS=[], REGIONS=[];   // filled in from the server once the password checks out
 const VLABEL={3:"Must",2:"Keen",1:"Maybe",0:"Skip"};
 const BOWL=(broth,top)=>`<ellipse cx="50" cy="52" rx="38" ry="12" fill="${broth}"/>${top}<path d="M12 52 Q14 84 50 86 Q86 84 88 52 Z" fill="#f4efe6" stroke="#c9bfae" stroke-width="1.5"/><path d="M20 70 Q50 78 80 70" stroke="#b23a2e" stroke-width="2.5" fill="none"/>`;
 const NOODLE=c=>`<path d="M22 50 q6-5 12 0 t12 0 t12 0 t12 0 t10 0" stroke="${c}" stroke-width="2.2" fill="none"/><path d="M24 55 q6-5 12 0 t12 0 t12 0 t12 0" stroke="${c}" stroke-width="2.2" fill="none"/>`;
@@ -40,15 +41,16 @@ ice:`<rect x="8" y="78" width="84" height="8" fill="#e8f1f7"/><path d="M30 78 L3
 };
 const $=s=>document.querySelector(s);
 function el(tag,cls,text){const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e}
-const K=k=>"gv-"+TRIP.id+"-"+k;
+const K=k=>"gv-"+TRIP_ID+"-"+k;
 function ls(k,v){try{if(v===undefined) return localStorage.getItem(K(k)); if(v===null) localStorage.removeItem(K(k)); else localStorage.setItem(K(k),v)}catch(e){return null}}
+const REDUCED=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-let me=ls("me"); if(TRAVELERS.indexOf(me)<0) me=null;
-let code=ls("code")||"";
-let sortMode="region", ballots={}, online=false, pending=Promise.resolve();
+let me=null, code=ls("code")||"";
+let sortMode="region", ballots={}, pending=Promise.resolve(), saving=0, unsent=false, loading=false;
 const photos={};
-const status=t=>{$("#status").textContent=t};
+const status=t=>{const s=$("#status"); if(s) s.textContent=t};
 const voted=()=>Object.keys(ballots).filter(n=>Object.keys(ballots[n]||{}).length).length+" of "+TRAVELERS.length+" have voted";
+const tripPath="/trips/"+encodeURIComponent(TRIP_ID);
 
 // ---------- Vote server ----------
 // Lambda answers 429 "Rate Exceeded" (not our JSON) when its concurrency cap of 5 is busy, e.g. several people opening
@@ -64,30 +66,41 @@ async function api(path,opts){
   }
 }
 const post=(path,body)=>api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+// The password stopped working while the page was open (it was changed): forget it and go back to the gate.
+const CHANGED="The password has changed. Enter the new one.";
+function lockOut(msg){
+  if(lockOut.done) return; lockOut.done=true;
+  ls("code",null);
+  try{ if(msg) sessionStorage.setItem("gv-msg",msg) }catch(e){}
+  location.reload();
+}
 
 // ---------- Votes ----------
-let unsent=false;   // my ballot has changes the server hasn't taken yet: sent after the next successful load
+// Refreshes every 30 seconds and when the tab comes back. The server's copy wins, except my own ballot while a save of
+// it is in flight or waiting to be resent: so a vote I just cast doesn't flicker back, and votes I cast on another
+// device show up here.
 async function loadVotes(){
-  if(!CFG.apiUrl){ status("Votes save on this device only (backend not set up)"); return }
-  if(!code){ $("#codeBanner").hidden=false; status("Enter the trip code"); return }
-  const j=await api("/trips/"+encodeURIComponent(TRIP.id)+"?code="+encodeURIComponent(code));
-  if(!j){ status("Can't reach the vote server right now"); return }
-  if(!j.ok){ if(j.error==="code"){ ls("code",null); code=""; $("#codeBanner").hidden=false; status("Wrong trip code") } else status("Vote server error"); return }
-  $("#codeBanner").hidden=true;
-  // Online, my in-page ballot wins over the copy just read. Coming online with votes cast before the server answered,
-  // those are laid over the saved ballot rather than replacing it.
-  const mine=(me&&(online||unsent))?ballots[me]:null, was=online; online=true; ballots=j.ballots||{};
-  if(mine) ballots[me]=was?mine:Object.assign({},ballots[me]||{},mine);
-  status(voted()); render();
-  if(unsent){ unsent=false; saveVote() }
+  if(loading) return; loading=true;
+  try{
+    const j=await api(tripPath+"?only=ballots&code="+encodeURIComponent(code));
+    if(!j){ status("Can't reach the vote server right now"); return }
+    if(!j.ok){ if(j.error==="code") lockOut(CHANGED); else status("Vote server error"); return }
+    const mine=(me&&(saving||unsent))?ballots[me]:null, before=JSON.stringify(ballots);
+    ballots=j.ballots||{};
+    if(mine) ballots[me]=mine;
+    status(voted());
+    if(JSON.stringify(ballots)!==before) render();
+    if(unsent){ unsent=false; saveVote() }
+  } finally { loading=false }
 }
 function saveVote(){
-  const who=me;
-  if(!online){ ls("local-"+who, JSON.stringify(ballots[who]||{})); if(CFG.apiUrl) unsent=true; return }
-  pending=pending.then(()=>post("/trips/"+encodeURIComponent(TRIP.id)+"/ballots",{code,name:who,votes:ballots[who]||{}})).then(j=>{
+  const who=me; if(!who) return;
+  saving++;
+  pending=pending.then(()=>post(tripPath+"/ballots",{code,name:who,votes:ballots[who]||{}})).then(j=>{
     if(j&&j.ok){ ballots=Object.assign({},j.ballots,{[who]:ballots[who]}); status(voted()); render() }
     else if(!j){ unsent=true; status("Vote not saved yet. Retrying shortly.") }
-    else status("Couldn't save that vote") }).catch(()=>{});
+    else if(j.error==="code") lockOut(CHANGED);
+    else status("Couldn't save that vote") }).catch(()=>{}).finally(()=>{ saving-- });
 }
 
 // ---------- Photos (Google Maps Places API) ----------
@@ -98,28 +111,24 @@ function saveVote(){
 let placesLib=null, budgetSpent=false, mapsDown=false, worked=0, failRun=0, active=0;
 const queue=[], tried={};
 window.gm_authFailure=()=>{ mapsDown=true };
-async function getMapsKey(){
-  if(CFG.mapsApiKey) return CFG.mapsApiKey;
-  if(!CFG.apiUrl) return "";
-  const j=await api("/config"); return (j&&j.ok&&j.mapsApiKey)||"";
-}
-function loadMaps(){
-  return getMapsKey().then(key=>{ CFG.mapsApiKey=key; return new Promise((res,rej)=>{
-    if(!CFG.mapsApiKey) return rej(new Error("no key"));
+function loadMaps(key){   // the key comes with the trip, after the password
+  return new Promise((res,rej)=>{
+    if(!key) return rej(new Error("no key"));
     window.__gvMapsReady=()=>res();
     const s=document.createElement("script");
-    s.src="https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(CFG.mapsApiKey)+"&v=weekly&loading=async&callback=__gvMapsReady";
+    s.src="https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(key)+"&v=weekly&loading=async&callback=__gvMapsReady";
     s.async=true; s.onerror=()=>rej(new Error("maps load failed")); document.head.appendChild(s);
-  }) });
+  });
 }
 const io=("IntersectionObserver" in window)?new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ io.unobserve(e.target); wantPhoto(e.target.dataset.id) } }),{rootMargin:"400px"}):null;
 const byId=id=>ITEMS.find(i=>i.id===id);
 // Only the server's own "limit" answer means the budget is spent; a throttle or network error is just a failed try.
 async function reserve(kind){
-  if(budgetSpent||!CFG.apiUrl) return false;
-  const j=await post("/usage",{kinds:[kind]});
+  if(budgetSpent) return false;
+  const j=await post("/usage",{trip:TRIP_ID,code,kinds:[kind]});
   if(j&&j.ok) return true;
-  if(j&&j.error==="limit"&&!budgetSpent){ budgetSpent=true; const b=$("#setupBanner"); b.hidden=false; b.textContent="This month's photo budget is used up, so items show illustrations until next month." }
+  if(j&&j.error==="code") lockOut(CHANGED);
+  else if(j&&j.error==="limit"&&!budgetSpent){ budgetSpent=true; const b=$("#setupBanner"); b.hidden=false; b.textContent="This month's photo budget is used up, so items show illustrations until next month." }
   return false;
 }
 function wantPhoto(id){ if(tried[id]) return; tried[id]=true; queue.push(id); pumpPhotos() }
@@ -168,7 +177,7 @@ function credit(pic,ph){
 function renderWho(){
   const w=$("#who"); w.textContent="";
   TRAVELERS.forEach(n=>{const b=el("button","chip",n); b.id="who-"+n; b.setAttribute("aria-pressed",String(me===n));
-    b.onclick=()=>{ me=n; ls("me",n); if(!online){ try{ ballots[n]=JSON.parse(ls("local-"+n)||"{}") }catch(e){} } renderWho(); render() }; w.appendChild(b)});
+    b.onclick=()=>{ me=n; ls("me",n); renderWho(); render() }; w.appendChild(b)});
   $("#dotsKey").textContent="Squares under each total: "+TRAVELERS.map(t=>t[0]).join(" · ");
 }
 function totals(id){let t=0,n=0; TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][id]; if(typeof v==="number"){t+=v;n++}}); return {t,n}}
@@ -204,7 +213,7 @@ function row(it){
   return r;
 }
 function render(){
-  const L=$("#list"); L.textContent="";
+  const L=$("#list"); if(!L) return; L.textContent="";
   if(!me) L.appendChild(el("p","empty","Pick your name above to start voting. Everyone's votes show here once they're in."));
   if(sortMode==="region"){ REGIONS.forEach(g=>{L.appendChild(el("h2",null,g)); ITEMS.filter(i=>i.r===g).forEach(i=>L.appendChild(row(i)))}) }
   else { L.appendChild(el("h2",null,"Group ranking")); ITEMS.slice().sort((a,b)=>totals(b.id).t-totals(a.id).t||totals(b.id).n-totals(a.id).n).forEach(i=>L.appendChild(row(i))) }
@@ -215,19 +224,97 @@ function cast(id,v){
   if(cur[id]===v) delete cur[id]; else cur[id]=v;
   ballots=Object.assign({},ballots,{[me]:cur}); render(); saveVote();
 }
+function mountBallot(){
+  const v=el("div","gv-ballot");
+  v.innerHTML='<div class="wrap"><header><h1 id="title"></h1><p id="intro"></p><div class="banner" id="setupBanner" hidden></div></header></div>'
+    +'<div class="bar"><div class="bar-in"><span class="label">I am</span><div class="chips" id="who"></div><span class="label">Sort</span>'
+    +'<div class="tabs" id="sort"><button class="chip" data-s="region" aria-pressed="true">By region</button><button class="chip" data-s="rank" aria-pressed="false">Group ranking</button></div>'
+    +'<span class="status" id="status"></span></div></div>'
+    +'<div class="wrap" style="padding-block:4px 64px"><div class="legend">'
+    +[[3,"must"],[2,"keen"],[1,"maybe"],[0,"skip"]].map(([n,c])=>'<span><i class="sw" style="background:var(--'+c+')"></i>'+VLABEL[n]+' ('+n+')</span>').join("")
+    +'<span id="dotsKey"></span></div><div id="list"></div>'
+    +'<p class="gattr">Photos via Google Maps; each photo credits its contributor. <button type="button" class="lock" id="lock" title="Forget the password on this device">Lock this page</button></p></div>';
+  document.body.appendChild(v);
+  document.title=TRIP.title||"Trip vote"; $("#title").textContent=TRIP.title||""; $("#intro").textContent=TRIP.intro||"";
+  $("#sort").addEventListener("click",e=>{const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s;
+    document.querySelectorAll("#sort button").forEach(x=>x.setAttribute("aria-pressed",String(x===b))); render()});
+  $("#lock").addEventListener("click",()=>{ ls("code",null); ls("me",null); location.reload() });
+}
 
-// ---------- Boot ----------
-document.title=TRIP.title; $("#title").textContent=TRIP.title; $("#intro").textContent=TRIP.intro||"";
-$("#sort").addEventListener("click",e=>{const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s;
-  document.querySelectorAll("#sort button").forEach(x=>x.setAttribute("aria-pressed",String(x===b))); render()});
-$("#codeForm").addEventListener("submit",e=>{e.preventDefault(); code=$("#codeInput").value.trim(); ls("code",code); loadVotes()});
-renderWho();
-if(me&&!CFG.apiUrl){ try{ ballots[me]=JSON.parse(ls("local-"+me)||"{}") }catch(e){} }
-render();
-const missing=[]; if(!CFG.apiUrl) missing.push("the vote server (shared votes and photos)");
-if(missing.length){ const b=$("#setupBanner"); b.hidden=false; b.textContent="Setup pending: "+missing.join(" and ")+". Until then the page shows illustrations and keeps votes on this device." }
-loadVotes();
-loadMaps().then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; pumpPhotos() }).catch(()=>{});
-// Keeps polling while a code is set, so a page that couldn't reach the server at first catches up on its own.
-setInterval(()=>{ if(code&&CFG.apiUrl&&document.visibilityState==="visible") loadVotes() },30000);
+// ---------- Password gate ----------
+// The corgi-capital.com home page look (VISUAL_IDENTITY.md): black, gold particle field, corner marks, Cormorant and
+// Inconsolata. A remembered password skips the form; a wrong or changed one brings it back.
+function buildGate(){
+  const g=el("section","gate"); g.setAttribute("aria-labelledby","gateTitle");
+  g.innerHTML='<canvas class="gate-field" aria-hidden="true"></canvas><div class="gate-grain" aria-hidden="true"></div>'
+    +'<div class="gate-corner tl" aria-hidden="true"></div><div class="gate-corner tr" aria-hidden="true"></div><div class="gate-corner bl" aria-hidden="true"></div><div class="gate-corner br" aria-hidden="true"></div>'
+    +'<header class="gate-top"><a class="gate-mark" href="/">Corgi Capital</a><span>Private</span></header>'
+    +'<div class="gate-center"><div class="gate-line top"></div>'
+    +'<h1 class="gate-title" id="gateTitle">By Invitation</h1><p class="gate-gold">Only.</p>'
+    +'<div class="gate-line bottom"></div>'
+    +'<form class="gate-form"><input type="password" name="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Password" aria-label="Password"><button type="submit">Enter</button></form>'
+    +'<p class="gate-msg" role="status" aria-live="polite"></p></div>'
+    +'<footer class="gate-bottom"><div class="gate-coords">40.7128° N<br>74.0060° W</div><a class="gate-contact" href="mailto:hello@corgi-capital.com">hello@corgi-capital.com</a></footer>';
+  return g;
+}
+// The home page's gold particle field. Returns a stop function, called once the gate is gone.
+function particleField(canvas){
+  if(REDUCED||!canvas.getContext) return ()=>{};
+  const ctx=canvas.getContext("2d"), N=72, LINK=180, SPEED=.18, ps=[], rand=(a,b)=>a+Math.random()*(b-a);
+  let W=0, H=0, raf=0;
+  function reset(p,init){ p.x=rand(0,W); p.y=init?rand(0,H):(Math.random()<.5?-4:H+4); p.vx=rand(-SPEED,SPEED); p.vy=rand(-SPEED,SPEED);
+    if(Math.abs(p.vx)<.05) p.vx=SPEED*(Math.random()<.5?1:-1); p.r=rand(.6,1.6); p.a=rand(.25,.65) }
+  function size(){ W=canvas.width=innerWidth; H=canvas.height=innerHeight; ps.forEach(p=>{ if(p.x>W) p.x=rand(0,W); if(p.y>H) p.y=rand(0,H) }) }
+  function frame(){
+    ctx.clearRect(0,0,W,H);
+    for(let i=0;i<N;i++) for(let j=i+1;j<N;j++){
+      const a=ps[i], b=ps[j], d=Math.hypot(a.x-b.x,a.y-b.y);
+      if(d<LINK){ const t=1-d/LINK; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.strokeStyle="rgba(201,165,90,"+(t*t*.12)+")"; ctx.lineWidth=.5; ctx.stroke() }
+    }
+    for(const p of ps){ p.x+=p.vx; p.y+=p.vy; if(p.x<-10||p.x>W+10||p.y<-10||p.y>H+10) reset(p,false);
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fillStyle="rgba(201,165,90,"+p.a+")"; ctx.fill() }
+    raf=requestAnimationFrame(frame);
+  }
+  size(); for(let i=0;i<N;i++){ const p={}; reset(p,true); ps.push(p) }
+  addEventListener("resize",size); frame();
+  return ()=>{ cancelAnimationFrame(raf); removeEventListener("resize",size) };
+}
+function boot(){
+  if(!TRIP_ID||!CFG.apiUrl){ document.body.textContent="This page isn't set up yet."; return }
+  const gate=buildGate(); document.body.appendChild(gate);
+  const stopField=particleField(gate.querySelector("canvas"));
+  const form=gate.querySelector("form"), input=form.querySelector("input"), btn=form.querySelector("button"), msg=gate.querySelector(".gate-msg");
+  const say=t=>{ msg.textContent=t||"" }, fine=window.matchMedia&&matchMedia("(pointer: fine)").matches;
+  let busy=false;
+  async function attempt(pw,remembered){
+    pw=String(pw||"").trim();
+    if(!pw){ say("Enter the password."); input.focus(); return }
+    if(busy) return; busy=true; btn.disabled=true; input.readOnly=true; say(remembered?"Opening…":"Checking…");
+    const j=await api(tripPath+"?code="+encodeURIComponent(pw));
+    if(j&&j.ok){ code=pw; ls("code",pw); return open(j) }   // the form stays disabled while the gate fades out
+    busy=false; btn.disabled=false; input.readOnly=false; form.hidden=false;
+    if(j&&j.error==="code"){
+      if(remembered){ ls("code",null); code=""; input.value=""; say(CHANGED) } else { say("Incorrect password."); input.select() }
+    } else { if(remembered) input.value=pw; say("Can't reach the server. Try again in a moment.") }
+    if(fine) input.focus();
+  }
+  function open(j){
+    TRIP=j.trip||{}; TRAVELERS=TRIP.travelers||[]; ITEMS=TRIP.items||[]; REGIONS=TRIP.regions||[];
+    me=ls("me"); if(TRAVELERS.indexOf(me)<0) me=null;
+    ballots=j.ballots||{};
+    const swap=()=>{
+      stopField(); gate.remove(); document.body.classList.remove("gv-locked"); window.scrollTo(0,0);
+      mountBallot(); renderWho(); status(voted()); render();
+      loadMaps(j.mapsApiKey).then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; pumpPhotos() }).catch(()=>{});
+      setInterval(()=>{ if(document.visibilityState==="visible") loadVotes() },30000);
+      document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") loadVotes() });
+    };
+    if(REDUCED) swap(); else { gate.classList.add("leaving"); setTimeout(swap,350) }
+  }
+  form.addEventListener("submit",e=>{ e.preventDefault(); attempt(input.value,false) });
+  let note=""; try{ note=sessionStorage.getItem("gv-msg")||""; sessionStorage.removeItem("gv-msg") }catch(e){}
+  if(code){ form.hidden=true; attempt(code,true) }
+  else { say(note); if(fine) input.focus({preventScroll:true}) }
+}
+boot();
 })();

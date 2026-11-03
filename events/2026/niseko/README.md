@@ -1,12 +1,11 @@
-# Hokkaido Eats Vote (Feb 2027)
+# Niseko trip page
 
-Trip page for the Group Vote tool in `projects/group-vote/`. Trip id `niseko-2027`.
+Trip page for the Group Vote tool in `projects/group-vote/`, trip id `niseko-2027`. The page itself (title, travelers, items) is in `projects/group-vote/trips/niseko-2027.json`, which stays out of git; the vote server sends it only with the trip's password.
 
-Register on the server once:
+To change the page, edit that file and run, from `projects/group-vote/server`:
 
 ```bash
-python projects/group-vote/server/create_trip.py --table <TableName> --trip niseko-2027 \
-  --travelers Bill,Edwin,Mikey,Alice --code <trip code>
+python create_trip.py --table <TableName> --file ../trips/niseko-2027.json
 ```
 
-Remove this folder after the trip.
+Add `--code "<new password>"` to change the password. Remove this folder after the trip.

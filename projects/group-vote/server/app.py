@@ -1,16 +1,21 @@
 """Group Vote API: one Lambda behind a function URL, one DynamoDB table.
 
+A trip's page data (title, travelers, items), its votes and the Google Maps key go out only with the trip's password,
+so the public page carries nothing but the trip id.
+
 Routes
-  GET  /config                         -> {"ok": true, "mapsApiKey": "..."} (browser key, read from Secrets Manager)
-  GET  /trips/{trip}?code=...          -> {"ok": true, "ballots": {name: {item_id: 0-3}}}
-  POST /trips/{trip}/ballots           body {"code", "name", "votes"} -> same as GET
+  GET  /trips/{trip}?code=...          -> {"ok": true, "trip": {page data}, "ballots": {name: {item_id: 0-3}}, "mapsApiKey": "..."}
+                                       (&only=ballots: just {"ok": true, "ballots": ...}). 403 {"ok": false, "error": "code"}
+                                       for a wrong password or an unknown trip.
+  POST /trips/{trip}/ballots           body {"code", "name", "votes"} -> {"ok": true, "ballots": ...}
   GET  /usage                          -> {"ok": true, "month": "YYYY-MM", "used": {...}, "limits": {...}}
-  POST /usage                          body {"kinds": ["search", "photo"]} -> {"ok": true}; 429 {"ok": false, "error": "limit"} only
-                                       when the month's budget is spent; 503 {"ok": false, "error": "busy"} on a passing error.
+  POST /usage                          body {"trip", "code", "kinds": ["search", "photo"]} -> {"ok": true}; 403 "code" without a
+                                       valid password; 429 {"ok": false, "error": "limit"} only when the month's budget is spent;
+                                       503 {"ok": false, "error": "busy"} on a passing error.
                                        Reserves one unit of each kind against this month's Google Maps budget.
 
 Table layout (single table, on-demand)
-  pk = "trip#<trip>", sk = "meta"          travelers [names], code_hash (sha256 hex), created
+  pk = "trip#<trip>", sk = "meta"          travelers [names], code_hash (see code_hash), page (page data as JSON), created, updated
   pk = "trip#<trip>", sk = "ballot#<name>" votes {item_id: int}, updated
   pk = "usage#<YYYY-MM>", sk = "<kind>"    count (Google Maps calls made this month, Pacific time like Google billing)
 """
@@ -92,11 +97,22 @@ def _meta(trip):
     return TABLE.get_item(Key={"pk": f"trip#{trip}", "sk": "meta"}).get("Item")
 
 
+def code_hash(code):
+    """Passwords match trimmed and in any case, so a phone's capitalized first letter still works. create_trip.py
+    stores the same hash."""
+    return hashlib.sha256(code.strip().lower().encode()).hexdigest()
+
+
 def _code_ok(meta, code):
-    if not meta or not isinstance(code, str):
+    if not meta or "code_hash" not in meta or not isinstance(code, str) or not code.strip():
         return False
-    given = hashlib.sha256(code.encode()).hexdigest()
-    return hmac.compare_digest(given, meta["code_hash"])
+    return hmac.compare_digest(code_hash(code), meta["code_hash"])
+
+
+def _page(trip, meta):
+    page = json.loads(meta.get("page") or "{}")
+    page.update(id=trip, travelers=list(meta.get("travelers", [])))
+    return page
 
 
 def _ballots(trip):
@@ -111,10 +127,14 @@ def _ballots(trip):
 
 
 def _get_maps_key():
-    # Cached for an hour so a rotated key takes effect without a redeploy.
-    if _maps_key["value"] is None or time.time() - _maps_key["at"] > 3600:
-        _maps_key["value"] = SECRETS.get_secret_value(SecretId=os.environ["MAPS_SECRET_ID"])["SecretString"].strip()
-        _maps_key["at"] = time.time()
+    # Cached for an hour so a rotated key takes effect without a redeploy. None if the secret can't be read: the page
+    # then shows illustrations.
+    try:
+        if _maps_key["value"] is None or time.time() - _maps_key["at"] > 3600:
+            _maps_key["value"] = SECRETS.get_secret_value(SecretId=os.environ["MAPS_SECRET_ID"])["SecretString"].strip()
+            _maps_key["at"] = time.time()
+    except Exception:
+        return None
     return _maps_key["value"]
 
 
@@ -126,10 +146,14 @@ def handler(event, _context):
             return _resp(200, _usage())
         if method == "POST":
             try:
-                kinds = json.loads(event.get("body") or "{}").get("kinds") or []
+                body = json.loads(event.get("body") or "{}")
+                kinds = body.get("kinds") or []
             except (json.JSONDecodeError, AttributeError):
                 return _resp(400, {"ok": False, "error": "json"})
-            kinds = sorted(set(k for k in kinds if k in LIMITS))
+            trip = body.get("trip")
+            if not isinstance(trip, str) or not TRIP_RE.match(trip) or not _code_ok(_meta(trip), body.get("code")):
+                return _resp(403, {"ok": False, "error": "code"})
+            kinds = sorted(set(k for k in kinds if isinstance(k, str) and k in LIMITS)) if isinstance(kinds, list) else []
             if not kinds:
                 return _resp(400, {"ok": False, "error": "kinds"})
             try:
@@ -137,21 +161,18 @@ def handler(event, _context):
             except (BotoCoreError, ClientError):
                 return _resp(503, {"ok": False, "error": "busy"})  # not a budget answer: the page retries
             return _resp(200, {"ok": True}) if reserved else _resp(429, {"ok": False, "error": "limit"})
-    if method == "GET" and parts == ["config"]:
-        try:
-            return _resp(200, {"ok": True, "mapsApiKey": _get_maps_key()})
-        except Exception:  # missing secret or permissions: page falls back to illustrations
-            return _resp(503, {"ok": False, "error": "config"})
     if len(parts) < 2 or parts[0] != "trips" or not TRIP_RE.match(parts[1]):
         return _resp(404, {"ok": False, "error": "not_found"})
     trip = parts[1]
     meta = _meta(trip)
 
     if method == "GET" and len(parts) == 2:
-        code = (event.get("queryStringParameters") or {}).get("code")
-        if not _code_ok(meta, code):
+        qs = event.get("queryStringParameters") or {}
+        if not _code_ok(meta, qs.get("code")):
             return _resp(403, {"ok": False, "error": "code"})
-        return _resp(200, {"ok": True, "ballots": _ballots(trip)})
+        if qs.get("only") == "ballots":  # the page's 30-second refresh
+            return _resp(200, {"ok": True, "ballots": _ballots(trip)})
+        return _resp(200, {"ok": True, "trip": _page(trip, meta), "ballots": _ballots(trip), "mapsApiKey": _get_maps_key()})
 
     if method == "POST" and len(parts) == 3 and parts[2] == "ballots":
         try:
