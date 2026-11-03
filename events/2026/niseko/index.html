@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Hokkaido Eats Vote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="../../../projects/group-vote/web/group-vote.css">
+</head><body>
+<div class="wrap">
+<header>
+  <h1 id="title"></h1>
+  <p id="intro"></p>
+  <div class="banner" id="codeBanner" hidden>
+    Enter the trip code to see and save votes.
+    <form class="codebox" id="codeForm"><input id="codeInput" type="password" autocomplete="off" placeholder="Trip code" aria-label="Trip code"><button class="chip" type="submit">Save code</button></form>
+  </div>
+  <div class="banner" id="setupBanner" hidden></div>
+</header>
+</div>
+<div class="bar"><div class="bar-in">
+  <span class="label">I am</span>
+  <div class="chips" id="who"></div>
+  <span class="label">Sort</span>
+  <div class="tabs" id="sort">
+    <button class="chip" data-s="region" aria-pressed="true">By region</button>
+    <button class="chip" data-s="rank" aria-pressed="false">Group ranking</button>
+  </div>
+  <span class="status" id="status">Loading…</span>
+</div></div>
+<div class="wrap" style="padding-block:4px 64px">
+  <div class="legend">
+    <span><i class="sw" style="background:var(--must)"></i>Must (3)</span>
+    <span><i class="sw" style="background:var(--keen)"></i>Keen (2)</span>
+    <span><i class="sw" style="background:var(--maybe)"></i>Maybe (1)</span>
+    <span><i class="sw" style="background:var(--skip)"></i>Skip (0)</span>
+    <span id="dotsKey"></span>
+  </div>
+  <div id="list"></div>
+  <p class="gattr">Photos via Google Maps; each photo credits its contributor.</p>
+</div>
+<script>
+// Trip data. To make a new trip: copy this folder, change id/travelers/items, and create the trip on the server (projects/group-vote/server/create_trip.py).
+window.TRIP = (function(){
+  const TB="https://tabelog.com/en/hokkaido/";
+  const ITEMS=[
+ // Sapporo
+ {id:"miso",art:"miso",q:"Menya Saimi Sapporo",r:"Sapporo",dish:"Miso ramen",place:"Menya Saimi",area:"Misono, 10 min subway",score:"3.95",badge:"Ramen top 100",note:"Hokkaido's highest-rated miso ramen. Walk-in, closed Mon.",url:TB+"A0101/A010303/1000018/"},
+ {id:"curry",art:"curry",q:"Soup Curry Suage+ Sapporo",r:"Sapporo",dish:"Soup curry",place:"Suage+ (or Soup Curry KING, PICANTE)",area:"Central",score:"3.69",badge:"Curry top 100 2026",note:"Spiced broth, big vegetables and meat, choose your heat.",url:TB+"A0101/A010103/1006004/"},
+ {id:"teppan",art:"teppan",q:"Teppanyaki Ishikari Sapporo",r:"Sapporo",dish:"Teppanyaki",place:"Teppanyaki Ishikari",area:"Sapporo Station",score:"3.63",badge:"Steak & teppanyaki top 100 2025",note:"Hokkaido beef and seafood cooked at the counter.",url:TB+"A0101/A010101/1004828/"},
+ {id:"lamb",art:"lamb",q:"Sapporo Jingisukan Shirokuma",r:"Sapporo",dish:"Jingisukan (grilled lamb)",place:"Shirokuma or Daruma Honten",area:"Susukino",score:"3.68",badge:"",note:"Lamb on a domed griddle, fat runs onto the vegetables. Sapporo's signature.",url:TB+"A0101/A010103/1000800/"},
+ {id:"okonomi",art:"okonomi",q:"Hiroshima okonomiyaki Hina-chan Sapporo",r:"Sapporo",dish:"Okonomiyaki",place:"Hina Chan (Hiroshima-style)",area:"Susukino",score:"3.48",badge:"",note:"Or monjayaki at Monja Kaoru (3.47).",url:TB+"A0101/A010103/1045048/"},
+ {id:"tonkatsu",art:"katsu",q:"Tonkatsu Kyohei Sapporo",r:"Sapporo",dish:"Tonkatsu",place:"Tonkatsu Kyohei (or Aoki, top 100)",area:"Susukino",score:"3.60",badge:"",note:"Opened 2024 and already above the award-winning Aoki (3.55).",url:TB+"A0101/A010103/1078535/"},
+ {id:"udon",art:"udon",q:"Masuda Udon Sapporo",r:"Sapporo",dish:"Udon",place:"Masuda Udon (or late-night Kasu Udon Fudo, 3.58)",area:"Central",score:"3.57",badge:"Udon top 100 2020",note:"Fudo runs 6 PM to 5 AM: an after-bars option.",url:"https://tabelog.com/hokkaido/A0101/A010102/1043434/"},
+ {id:"meshiya",art:"don",q:"Teishoku Meshiya Sapporo",r:"Sapporo",dish:"Seafood bowl breakfast",place:"Meshiya",area:"Jogai Market, Soen",score:"3.71",badge:"Diner top 100 2026",note:"Four-topping bowl about $10 before 11 AM, plus scallop salt ramen. 7 AM-1 PM, closed Wed.",url:TB+"A0101/A010105/1009451/"},
+ {id:"crab",art:"crab",q:"Nishii Kyodai Susukino",r:"Sapporo",dish:"Crab shabu-shabu",place:"Nishii Kyodai",area:"Susukino",score:"3.59",badge:"",note:"Crab in a rich miso broth, about $64-96.",url:""},
+ {id:"sushitop",art:"sushi",q:"Sushi Miyakawa Sapporo",r:"Sapporo",dish:"Top-tier sushi omakase",place:"Sushi Miyakawa",area:"Maruyama",score:"4.48",badge:"Tabelog Award 2026 Silver",note:"Sapporo's #1 on Tabelog. About $204+. Seats released by phone monthly; hard to get.",url:TB+"A0101/A010105/1073214/"},
+ {id:"tempura",art:"tempura",q:"Tempura Araki Sapporo",r:"Sapporo",dish:"Tempura counter",place:"Tempura Araki",area:"Susukino",score:"4.10",badge:"Tabelog Award 2026 Bronze",note:"About $96-127. Books 2 months out.",url:TB+"A0101/A010103/1048079/"},
+ // Otaru & Yoichi
+ {id:"otarusushi",art:"sushi",q:"Isezushi Otaru",r:"Otaru & Yoichi",dish:"Otaru sushi",place:"Isezushi (or Takarasushi, 3.69)",area:"Near Otaru Station",score:"3.68",badge:"Sushi top 100 2025",note:"Otaru is Hokkaido's sushi town. Closed Wed.",url:TB+"A0106/A010601/1000008/"},
+ {id:"ankake",art:"ankake",q:"Keien Otaru ankake yakisoba",r:"Otaru & Yoichi",dish:"Ankake yakisoba",place:"Keien",area:"3 min from Otaru Station",score:"3.49",badge:"",note:"Otaru's own: crispy noodles under a thick seafood gravy. Closed Thu.",url:""},
+ {id:"naruto",art:"chicken",q:"Wakadori Jidai Naruto Otaru",r:"Otaru & Yoichi",dish:"Half chicken, fried whole",place:"Naruto, main shop",area:"Otaru",score:"3.52",badge:"Izakaya top 100 2024",note:"Otaru soul food.",url:"https://tabelog.com/hokkaido/A0106/A010601/1000906/"},
+ {id:"nikka",art:"still",q:"Nikka Whisky Yoichi Distillery",r:"Otaru & Yoichi",dish:"Nikka Yoichi Distillery",place:"Guided tour and tasting",area:"Yoichi",score:"3.58",badge:"",note:"Score is the distillery's tasting bar. Tour needs a reservation.",url:"https://nikka.com/en/distilleries/yoichi/access/"},
+ {id:"kakizaki",art:"don",q:"Kakizaki Shoten Yoichi",r:"Otaru & Yoichi",dish:"Yoichi seafood bowl",place:"Kakizaki Shoten",area:"3 min from Yoichi Station",score:"3.71",badge:"",note:"Yoichi's top-rated restaurant. Closed Thu.",url:TB+"A0106/A010602/1000224/"},
+ // Niseko
+ {id:"shabu",art:"pot",q:"Kyoto Shabu-Shabu Niseko",r:"Niseko",dish:"Wagyu and crab shabu-shabu",place:"Kyoto Shabu-Shabu Niseko",area:"Niseko Town",score:"n/a",badge:"",note:"Not on Tabelog. Matsusaka beef + crab $210. 100% charge inside 48 hours.",url:"https://www.tablecheck.com/en/shops/kyotoshabushabu/reserve"},
+ {id:"moliere",art:"plate",q:"Moliere Montagne Niseko",r:"Niseko",dish:"French tasting menu",place:"Molière Montagne",area:"Park Hyatt Hanazono",score:"3.74",badge:"French top 100 2025",note:"Niseko's top-rated dinner. About $127-255.",url:TB+"A0106/A010603/1063971/"},
+ {id:"teppanniseko",art:"teppan",q:"Teppan Park Hyatt Niseko Hanazono",r:"Niseko",dish:"Teppanyaki (Niseko)",place:"Teppan, Park Hyatt",area:"Hanazono",score:"3.52",badge:"Teppanyaki top 100 2024",note:"Open Wed-Sun, 21 counter seats.",url:TB+"A0106/A010603/1065926/"},
+ {id:"rakuichi",art:"soba",q:"Soba Rakuichi Niseko",r:"Niseko",dish:"Soba kaiseki",place:"Rakuichi",area:"Near Annupuri",score:"3.34",badge:"",note:"About $170 pp.",url:TB+"A0106/A010603/1006590/"},
+ {id:"gosetsu",art:"gosetsu",q:"Yukitei Kutchan",r:"Niseko",dish:"Gosetsu udon",place:"Yukitei",area:"Kutchan",score:"3.39",badge:"",note:"Translucent udon made with Kutchan potatoes and Yotei spring water.",url:TB+"A0106/A010603/1005185/"},
+ {id:"farm",art:"cone",q:"Niseko Milk Kobo Takahashi Farm",r:"Niseko",dish:"Farm soft serve and drinking yogurt",place:"Takahashi Farm Milk Kobo",area:"Niseko",score:"3.54",badge:"",note:"Open year-round, to 5:30 PM in winter.",url:TB+"A0106/A010603/1001596/"},
+ // Chitose
+ {id:"hayashi",art:"sushi",q:"Kita no Hana Hayashi Chitose",r:"Chitose",dish:"Sushi omakase (final night)",place:"Kita no Hana Hayashi",area:"10 min from Chitose Station",score:"3.77",badge:"Sushi top 100 2025",note:"Near New Chitose Airport. Pocket Concierge, opens 2 months ahead.",url:TB+"A0107/A010701/1049376/"},
+ // Sweets & drinks
+ {id:"milkmura",art:"conewhisky",q:"Milk Mura Sapporo",r:"Sweets & drinks",dish:"Soft serve with whisky liqueur",place:"Milk Mura",area:"Susukino",score:"3.67",badge:"Ice cream top 100 2026",note:"Pick a liqueur to pour over Hokkaido milk soft serve. Closed Mon.",url:""},
+ {id:"parfait",art:"parfait",q:"Parfait Coffee Sake Sato Sapporo",r:"Sweets & drinks",dish:"Late-night shime parfait",place:"Parfait Sato",area:"Odori",score:"3.56",badge:"",note:"Sapporo's end-of-night dessert.",url:"https://tabelog.com/en/hokkaido/A0101/A010102/1077806/dtlrvwlst/"},
+ {id:"matcha",art:"matcha",q:"Gyokusuien Sapporo",r:"Sweets & drinks",dish:"Matcha tasting",place:"Gyokusuien",area:"Near Nijo Market",score:"3.26",badge:"",note:"Tea shop since 1933: matcha omakase and matcha soft serve. Closed Sun.",url:TB+"A0101/A010102/1024279/"},
+ {id:"shiiya",art:"cake",q:"Patisserie Shiiya Sapporo",r:"Sweets & drinks",dish:"Patisserie run",place:"Patisserie Shiiya",area:"Maruyama",score:"3.70",badge:"Sweets top 100 2026",note:"Mostly takeout. Closed Wed, Thu.",url:""},
+ {id:"yamanaka",art:"cone",q:"Yamanaka Bokujo Otaru",r:"Sweets & drinks",dish:"Farm milk soft serve (Otaru)",place:"Yamanaka Farm",area:"Near Otaru Station",score:"3.62",badge:"Ice cream top 100 2026",note:"Dairy-only milk soft serve.",url:""},
+ {id:"boba",art:"boba",q:"The TEA Kokono Susukino",r:"Sweets & drinks",dish:"Boba",place:"The TEA Kokono",area:"Susukino",score:"3.22",badge:"",note:"Sapporo boba rates low on Tabelog; a convenience stop.",url:"https://tabelog.com/en/hokkaido/A0101/A010102/1079385/"},
+ {id:"nikkabar",art:"whisky",q:"The Nikka Bar Sapporo",r:"Sweets & drinks",dish:"Whisky bar",place:"The Nikka Bar",area:"Susukino",score:"3.58",badge:"",note:"Distillery-only Key Malt set.",url:TB+"A0101/A010103/1000766/"},
+ {id:"cocktail",art:"cocktail",q:"the bar nano gould Sapporo",r:"Sweets & drinks",dish:"Cocktail bar",place:"the bar nano gould.",area:"Tanukikoji",score:"3.64",badge:"",note:"Smoke cocktails built at the table. Closed Tue.",url:TB+"A0101/A010103/1042761/"},
+ {id:"ice",art:"ice",q:"Shikotsu Lake Ice Festival",r:"Sweets & drinks",dish:"Lake Shikotsu Ice Festival",place:"Ice sculptures lit at night",area:"Near the airport",score:"n/a",badge:"",note:"Runs to Feb 23.",url:""},
+];
+  return {
+    id: "niseko-2027",
+    title: "Hokkaido Eats Vote",
+    intro: "Sapporo, Otaru, Yoichi, Niseko, Chitose. Prices in USD. Coffee isn't on the ballot: it's the daily start, cycled by what's nearby. Pick your name, then mark each dish or stop; the list re-ranks by the group's total. Scores are Tabelog ratings (3.5+ very good, 3.8+ exceptional). Photos come from Google Maps; tap a place name for its Tabelog page.",
+    travelers: ["Bill","Edwin","Mikey","Alice"],
+    region: "jp",
+    scoreLabel: "Tabelog",
+    regions: ["Sapporo","Otaru & Yoichi","Niseko","Chitose","Sweets & drinks"],
+    items: ITEMS
+  };
+})();
+</script>
+<script src="../../../projects/group-vote/web/group-vote-config.js"></script>
+<script src="../../../projects/group-vote/web/group-vote.js"></script>
+</body></html>

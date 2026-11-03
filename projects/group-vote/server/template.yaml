@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Group Vote API (Lambda function URL + DynamoDB) for corgi-capital.com group trip pages.
+
+Parameters:
+  AllowedOrigin:
+    Type: String
+    Default: https://corgi-capital.com
+  MapsKeySecretName:
+    Type: String
+    Default: group-vote/maps-api-key
+    Description: Secrets Manager secret holding the Google Maps browser key as a plain string
+
+Resources:
+  VotesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+
+  VoteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      Architectures: [arm64]
+      Handler: app.handler
+      CodeUri: .
+      MemorySize: 256
+      Timeout: 10
+      ReservedConcurrentExecutions: 5
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref VotesTable
+          MAPS_SECRET_ID: !Ref MapsKeySecretName
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref VotesTable }
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${MapsKeySecretName}-*"
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins: [!Ref AllowedOrigin, "http://localhost:8080"]
+          AllowMethods: [GET, POST]
+          AllowHeaders: [content-type]
+          MaxAge: 3600
+
+Outputs:
+  VoteApiUrl:
+    Description: Paste into projects/group-vote/web/group-vote-config.js as apiUrl
+    Value: !GetAtt VoteFunctionUrl.FunctionUrl
+  TableName:
+    Value: !Ref VotesTable
