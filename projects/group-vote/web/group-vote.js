@@ -10,7 +10,7 @@ let TRIP={}, TRAVELERS=[], ITEMS=[], REGIONS=[];   // filled in from the server 
 const VLABEL={3:"Must",2:"I want",1:"Meh",0:"Nah"};   // shown in capitals; 3/2/1/0 points
 const GROUPS=[["specialty","Regional specialties"],["favorite","Local favorites"]];
 const TIER={casual:"Casual",mid:"Mid-range",splurge:"Splurge"};
-const FILTERS=[["all","All"],["slotted","On the itinerary"],["casual","Casual"],["splurge","Splurge"],["izakaya","Izakaya"],["treats","Sweets & drinks"],["todo","To rate"]];
+const FILTERS=[["all","All"],["slotted","On the Itinerary"],["casual","Casual"],["splurge","Splurge"],["izakaya","Izakaya"],["treats","Sweets & Drinks"],["todo","Needs Rating"]];
 // Card headings and award badges in title case. Small words stay lower case mid-title, and only a lower-case first
 // letter changes, so "IWSC", "TableCheck" and "2017-19" come through as written.
 const SMALL=new Set(["a","an","and","as","at","but","by","for","from","in","into","nor","of","on","or","per","the","to","via","vs","with"]);
@@ -327,7 +327,7 @@ function card(it,rank){
   const ph=el("div","ph"); ph.dataset.id=it.id;
   const art=el("div","ph-art"); art.innerHTML='<svg viewBox="0 0 100 100" aria-hidden="true">'+(ART[it.art]||"")+'</svg>'; ph.appendChild(art);
   if(rank) ph.appendChild(el("span","ph-rank","#"+rank));
-  if(it.slot) ph.appendChild(el("span","ph-slot","On the itinerary"+(typeof it.slot==="string"?" · "+it.slot:"")));
+  if(it.slot) ph.appendChild(el("span","ph-slot","On the Itinerary"+(typeof it.slot==="string"?" · "+titleCase(it.slot):"")));
   c.appendChild(ph);
   const b=el("div","cb");
   b.appendChild(el("h3","dish",it.dish));

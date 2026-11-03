@@ -14,7 +14,7 @@ Each trip sits behind a password. The public page holds only the trip id and sho
 
 - Each place is a card: a photo strip you can swipe (arrows on desktop, tap for full screen), a title-case heading, the place's Tabelog score and tags, a **Tabelog** button (or the place's own site) and a **Google Maps** button for every photo and review, your vote, and the group's tally with each person's initial in their vote's color.
 - **Region** groups places by where you'll be, each region split into regional specialties and local favorites, under a "Known for" line. **Ranking** sorts by the group's total.
-- Filters: On the itinerary, Casual, Splurge, Izakaya, Sweets & drinks, To rate (places you haven't rated).
+- Filters: On the Itinerary, Casual, Splurge, Izakaya, Sweets & Drinks, Needs Rating (places you haven't rated).
 - Vote colors: green, light green, yellow, red. **Color-blind colors** (next to the key) switches to blue, pale blue, pale yellow, orange, which stay distinct with red-green or blue-yellow color blindness; each device remembers the choice. Both sets were picked by measured color difference, readable as text and as fills.
 - The scoreboard at the top counts, per person, how many of their MUSTs, I WANTs, MEHs and NAHs got a dedicated itinerary slot. Every place stays on the itinerary as an alternative; `slot` marks the ones with a slot of their own.
 
