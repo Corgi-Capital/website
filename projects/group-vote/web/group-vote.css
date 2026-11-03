@@ -204,6 +204,9 @@ body.lb-open{overflow:hidden}
 
 /* ---------- Region timing, section notes, currency ---------- */
 .when{margin:2px 0 8px;font:400 12px/1.7 var(--mono);letter-spacing:.03em;color:var(--gold-dim)}
+.tastes-btn{display:inline-grid;place-items:center;width:28px;height:28px;margin-left:2px;padding:0;border:1px solid var(--gold-line);border-radius:50%;background:none;color:var(--gold-2);align-self:center;margin:-8px 0 -8px 2px}
+.tastes-btn:hover{border-color:var(--gold);background:var(--gold-wash)}
+.tastes-btn .ic{width:14px;height:14px}
 .subnote{margin:-4px 0 12px;max-width:72ch;color:var(--muted);font:italic 400 17px/1.4 var(--display)}
 .seg.cur{padding:2px}
 .seg.cur button{min-height:26px;padding:2px 11px;font:400 11px var(--mono);letter-spacing:.12em}

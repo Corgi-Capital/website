@@ -122,9 +122,18 @@ def _code_ok(meta, code):
     return hmac.compare_digest(code_hash(code), meta["code_hash"])
 
 
+def _tastes(trip):
+    """The Group Tastes doc: what the group loves and avoids, edited by the agent from travelers' comments. Lives in its
+    own row so a trip upload never overwrites it."""
+    return TABLE.get_item(Key={"pk": f"trip#{trip}", "sk": "tastes"}).get("Item")
+
+
 def _page(trip, meta):
     page = json.loads(meta.get("page") or "{}")
     page.update(id=trip, travelers=list(meta.get("travelers", [])))
+    doc = _tastes(trip)
+    if doc:   # the doc, once anyone has commented, wins over the trip file's starting text
+        page.update(tastes=doc.get("brief", page.get("tastes", "")), tastesLine=doc.get("line", page.get("tastesLine", "")))
     return page
 
 
@@ -148,7 +157,7 @@ def _suggestion_rows(trip, limit=40):
 def _suggestions(trip):
     """The last few days' suggestions as the page shows them."""
     since = int(time.time()) - SUGGEST_SHOW_DAYS * 86400
-    keep = ("by", "text", "why", "status", "reason", "item")
+    keep = ("by", "text", "why", "status", "reason", "item", "kind")
     return [{"id": r["sk"], **{k: str(r.get(k, "")) for k in keep}, "created": int(r.get("created", 0)), "updated": int(r.get("updated", 0))}
             for r in _suggestion_rows(trip) if int(r.get("created", 0)) >= since]
 
@@ -159,8 +168,11 @@ def _suggest(trip, meta, body):
     name = body.get("name")
     if name not in meta.get("travelers", []):
         return _resp(400, {"ok": False, "error": "name"})
-    text, why = body.get("text"), body.get("why") or ""
-    lines = list(dict.fromkeys(l.strip() for l in text.splitlines() if l.strip())) if isinstance(text, str) else []
+    text, why, kind = body.get("text"), body.get("why") or "", "taste" if body.get("kind") == "taste" else "spot"
+    if kind == "taste":   # one comment on the group's tastes, for the agent to fold into the Group Tastes doc
+        lines = [" ".join(text.split())] if isinstance(text, str) and text.strip() else []
+    else:                 # one suggested spot per line
+        lines = list(dict.fromkeys(l.strip() for l in text.splitlines() if l.strip())) if isinstance(text, str) else []
     if not lines or len(lines) > 5 or any(len(l) > 500 for l in lines) or not isinstance(why, str):
         return _resp(400, {"ok": False, "error": "text"})
     day = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
@@ -175,7 +187,7 @@ def _suggest(trip, meta, body):
     now, ids = time.time(), []
     for n, line in enumerate(lines):
         sk = f"sugg#{int(now * 1000) + n:013d}-{os.urandom(2).hex()}"
-        TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": sk, "by": name, "text": line, "why": why.strip()[:200],
+        TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": sk, "by": name, "text": line, "why": why.strip()[:200], "kind": kind,
                              "status": "queued", "created": int(now), "updated": int(now)})
         ids.append(sk)
     LAMBDA.invoke(FunctionName=os.environ["AGENT_FUNCTION"], InvocationType="Event", Payload=json.dumps({"trip": trip, "ids": ids}).encode())

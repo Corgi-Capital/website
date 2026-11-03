@@ -25,7 +25,8 @@ const ICON={
   event:'<path d="M2.5 5h11v2a1.5 1.5 0 0 0 0 3v2h-11v-2a1.5 1.5 0 0 0 0-3z"/><path d="M9.5 5.5v1M9.5 8v1M9.5 10.5v1"/>',
   tastes:'<path d="M8 13.5S2.5 10.2 2.5 6.3A2.8 2.8 0 0 1 8 5a2.8 2.8 0 0 1 5.5 1.3C13.5 10.2 8 13.5 8 13.5z"/>',
   ig:'<rect x="2.5" y="2.5" width="11" height="11" rx="3.2"/><circle cx="8" cy="8" r="2.6"/><path d="M11.3 4.6v.1"/>',
-  plus:'<path d="M8 3v10M3 8h10"/>'
+  plus:'<path d="M8 3v10M3 8h10"/>',
+  comment:'<path d="M2.5 3.5h11v7.5h-6.2L4.5 13.5V11h-2z"/><path d="M5.5 6.5h5M5.5 8.5h3"/>'
 };
 const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",izakaya:"izakaya",treats:"sweets",events:"event",todo:"todo"};
 const icon=k=>ICON[k]?'<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">'+ICON[k]+'</svg>':"";
@@ -165,6 +166,7 @@ function setTrip(t){
 // being looked up the page checks every 5 seconds.
 let REV=0, SUGS=[], paceTimer=0;
 const SUG_STATE={queued:"Waiting",working:"Looking it up",added:"Added",duplicate:"Already listed",rejected:"Couldn't add",failed:"Couldn't add"};
+const TASTE_STATE={queued:"Waiting",working:"Updating tastes",added:"Tastes updated",rejected:"Not a taste",failed:"Couldn't update"};
 const sugPending=()=>SUGS.some(s=>s.status==="queued"||s.status==="working");
 function pace(){ clearTimeout(paceTimer); if(sugPending()) paceTimer=setTimeout(loadVotes,5000) }
 function setSugs(xs){ const before=JSON.stringify(SUGS); SUGS=xs; if(JSON.stringify(SUGS)!==before) renderSugs() }
@@ -175,11 +177,11 @@ function renderSugs(){
   S.appendChild(el("h2","sugs-h","Suggestions"));
   const ul=el("ul","sugs-l");
   SUGS.slice(0,8).forEach(s=>{
-    const li=el("li","sug "+s.status), busy=s.status==="queued"||s.status==="working";
-    li.appendChild(el("span","sug-st",SUG_STATE[s.status]||s.status));
-    const txt=el("span","sug-txt",busy?sugWhat(s.text)+" from "+s.by:money(s.reason||sugWhat(s.text))+" · "+s.by);
-    li.appendChild(txt);
-    if(s.item&&ITEMS.some(i=>i.id===s.item)){ const a=el("button","sug-see","See it"); a.type="button"; a.onclick=()=>seeItem(s.item); li.appendChild(a) }
+    const taste=s.kind==="taste", li=el("li","sug "+s.status), busy=s.status==="queued"||s.status==="working";
+    li.appendChild(el("span","sug-st",(taste?TASTE_STATE:SUG_STATE)[s.status]||s.status));
+    li.appendChild(el("span","sug-txt",busy?sugWhat(s.text)+" from "+s.by:money(s.reason||sugWhat(s.text))+" · "+s.by));
+    if(taste&&s.status==="added"){ const a=el("button","sug-see","See it"); a.type="button"; a.onclick=seeTastes; li.appendChild(a) }
+    else if(s.item&&ITEMS.some(i=>i.id===s.item)){ const a=el("button","sug-see","See it"); a.type="button"; a.onclick=()=>seeItem(s.item); li.appendChild(a) }
     ul.appendChild(li) });
   S.appendChild(ul);
 }
@@ -188,19 +190,28 @@ function seeItem(id){
   const k=cards[id]; if(!k) return;
   k.c.scrollIntoView({behavior:REDUCED?"auto":"smooth",block:"center"}); k.c.classList.remove("flash"); void k.c.offsetWidth; k.c.classList.add("flash");
 }
+function seeTastes(){
+  if(sortMode!=="region"||filter!=="all"){ sortMode="region"; filter="all"; syncTools(); render() }
+  const n=document.querySelector(".subnote"); if(n) n.scrollIntoView({behavior:REDUCED?"auto":"smooth",block:"center"});
+}
 function nudgeWho(){ const w=$("#whoWrap"); w.classList.remove("nudge"); void w.offsetWidth; w.classList.add("nudge"); toast("Pick your name first") }
-function openSuggest(){
+// One dialog for both: "spot" takes links or names (one per line, up to 5); "taste" takes one comment on what the group
+// loves or avoids, which the agent folds into the Group Tastes notes.
+function openSuggest(kind){
   if(!me) return nudgeWho();
   if(document.querySelector(".sg")) return;
+  const taste=kind==="taste", from=document.activeElement;
   const d=el("div","sg"); d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","sgTitle");
-  d.innerHTML='<form class="sg-card" novalidate><h2 id="sgTitle">Suggest a Spot</h2>'
-    +'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Our agent looks each one up, writes its card and adds it under Group Tastes (events under Events). It takes a minute or two, and everyone sees it.</p>'
-    +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;Or a name and the location"></textarea>'
+  d.innerHTML='<form class="sg-card" novalidate><h2 id="sgTitle">'+(taste?"Add to Group Tastes":"Suggest a Spot")+'</h2>'
+    +(taste?'<p class="sg-help">What does this group love, or avoid? Our agent folds it into the Group Tastes notes, which it also uses to judge new suggestions.</p>'
+      +'<label class="sg-l" for="sgText">Tastes</label><textarea id="sgText" rows="3" maxlength="500" placeholder="Spicy is always a plus&#10;Alice doesn&#39;t eat raw fish"></textarea>'
+      :'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Our agent looks each one up, writes its card and adds it under Group Tastes (events under Events). It takes a minute or two, and everyone sees it.</p>'
+      +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;Or a name and the location"></textarea>')
     +'<p class="sg-msg" role="status" aria-live="polite"></p>'
-    +'<div class="sg-row"><button type="button" class="sg-cancel">Cancel</button><button type="submit" class="sg-go">Suggest</button></div></form>';
+    +'<div class="sg-row"><button type="button" class="sg-cancel">Cancel</button><button type="submit" class="sg-go">'+(taste?"Add":"Suggest")+'</button></div></form>';
   document.body.appendChild(d); document.body.classList.add("lb-open");
   const f=d.querySelector("form"), ta=d.querySelector("#sgText"), msg=d.querySelector(".sg-msg"), go=d.querySelector(".sg-go");
-  function close(){ d.remove(); document.body.classList.remove("lb-open"); removeEventListener("keydown",key,true); const b=$("#suggestBtn"); if(b) b.focus() }
+  function close(){ d.remove(); document.body.classList.remove("lb-open"); removeEventListener("keydown",key,true); if(from&&from.focus) from.focus({preventScroll:true}) }
   function key(e){
     if(e.key==="Escape"){ e.preventDefault(); close() }
     else if(e.key==="Tab"){ const fs=[...d.querySelectorAll("textarea,input,button:not([disabled])")], i=fs.indexOf(document.activeElement);
@@ -212,15 +223,15 @@ function openSuggest(){
   f.addEventListener("submit",async e=>{
     e.preventDefault();
     const lines=ta.value.split("\n").map(s=>s.trim()).filter(Boolean);
-    if(!lines.length){ msg.textContent="Paste a link or type a name."; ta.focus(); return }
-    if(lines.length>5){ msg.textContent="Up to 5 at a time, please."; ta.focus(); return }
+    if(!lines.length){ msg.textContent=taste?"Write what the group loves or avoids.":"Paste a link or type a name."; ta.focus(); return }
+    if(!taste&&lines.length>5){ msg.textContent="Up to 5 at a time, please."; ta.focus(); return }
     go.disabled=true; msg.textContent="Sending…";
-    const j=await post(tripPath+"/suggestions",{code,name:me,text:lines.join("\n")});
+    const j=await post(tripPath+"/suggestions",taste?{code,name:me,kind:"taste",text:lines.join(" ")}:{code,name:me,text:lines.join("\n")});
     go.disabled=false;
-    if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); toast(lines.length>1?"Our agent is looking them up":"Our agent is looking it up"); pace();
-      const S=$("#sugs"); if(S&&S.getBoundingClientRect().top<0) S.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) }
+    if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); toast(taste?"Our agent is updating Group Tastes":lines.length>1?"Our agent is looking them up":"Our agent is looking it up"); pace();
+      const S=$("#sugs"); if(!taste&&S&&S.getBoundingClientRect().top<0) S.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) }
     else if(j&&j.error==="code") lockOut(CHANGED);
-    else msg.textContent=j&&j.error==="limit"?"That's today's limit for suggestions. Try again tomorrow.":j&&j.error==="text"?"One link or name per line, up to 5.":"Couldn't send that. Try again in a moment.";
+    else msg.textContent=j&&j.error==="limit"?"That's today's limit for suggestions. Try again tomorrow.":j&&j.error==="text"?(taste?"Keep it to a short comment.":"One link or name per line, up to 5."):"Couldn't send that. Try again in a moment.";
   });
   ta.focus();
 }
@@ -589,7 +600,9 @@ function render(){
       const parts=GROUPS.map(([k,label])=>[k,label,its.filter(i=>i.group===k)]);
       parts.push(["",TRIP.otherLabel||"More to Try",its.filter(i=>!GROUPS.some(([k])=>k===i.group))]);
       const used=parts.filter(([,,v])=>v.length);
-      used.forEach(([k,label,v])=>{ if(used.length>1){ const sh=el("h3","sub",label); sh.appendChild(el("small",null,String(v.length))); s.appendChild(sh)
+      used.forEach(([k,label,v])=>{ if(used.length>1){ const sh=el("h3","sub",label); sh.appendChild(el("small",null,String(v.length)));
+          if(k==="tastes"){ const t=el("button","tastes-btn"); t.type="button"; t.innerHTML=icon("comment"); t.title="Add to Group Tastes"; t.setAttribute("aria-label","Add to Group Tastes"); t.onclick=()=>openSuggest("taste"); sh.appendChild(t) }
+          s.appendChild(sh)
           if(k==="tastes"&&TRIP.tastesLine) s.appendChild(el("p","subnote",TRIP.tastesLine)) }
         const grid=el("div","grid"); v.forEach(i=>grid.appendChild(card(i))); s.appendChild(grid) });
       L.appendChild(s) });
@@ -642,7 +655,7 @@ function mountBallot(){
   F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; syncTools(); render() });
   $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render() });
   $("#lock").addEventListener("click",()=>{ ls("code",null); ls("me",null); location.reload() });
-  $("#suggestBtn").addEventListener("click",openSuggest);
+  $("#suggestBtn").addEventListener("click",()=>openSuggest("spot"));
   $('#cur [data-c="local"]').textContent=TRIP.currency||"JPY";
   $("#cur").addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&b.dataset.c!==cur) setCur(b.dataset.c) });
   document.querySelectorAll("#cur button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.c===cur)));
