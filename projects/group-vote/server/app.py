@@ -134,6 +134,8 @@ def _page(trip, meta):
     doc = _tastes(trip)
     if doc:   # the doc, once anyone has commented, wins over the trip file's starting text
         page.update(tastes=doc.get("brief", page.get("tastes", "")), tastesLine=doc.get("line", page.get("tastesLine", "")))
+        if doc.get("summary"):   # {"loves", "avoids", "examples"}: the short lists in the Group Tastes dialog
+            page["tastesSummary"] = {k: list(doc["summary"].get(k) or []) for k in ("loves", "avoids", "examples")}
     return page
 
 

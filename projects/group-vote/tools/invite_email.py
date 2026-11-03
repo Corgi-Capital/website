@@ -2,6 +2,7 @@
 to the vote, the password, the route and how the vote works.
 
   python tools/invite_email.py --file trips/niseko-2027.json --name Bill --password "<password>" --out invite.html
+  (add --note "<message>" to replace the trip's intro with a personal note, e.g. for a friend who isn't coming)
 
 Reads the trip file's "invite" block:
   {"subtitle": "Ski Trip", "dates": "February 18-28, 2027", "plan": "<trip plan URL, e.g. Notion>",
@@ -69,8 +70,11 @@ def button(text, url, filled):
             f'letter-spacing:.3px;color:{fg};text-decoration:none;border-radius:999px;">{esc(text)}</a></td></tr></table>')
 
 
-def render(trip, name, password):
+def render(trip, name, password, note=None):
+    """note: a personal message that takes the place of the trip's intro (blank lines start new paragraphs), for
+    someone who isn't on the trip."""
     inv = trip["invite"]
+    paras = [p.strip() for p in (note or inv.get("intro", "")).split("\n\n") if p.strip()]
     title, subtitle, dates = inv.get("title") or trip["title"].split(" ")[0], inv.get("subtitle", ""), inv.get("dates", "")
     pre = f"{dates}. The trip plan, the vote on where we eat, drink and go, and the password."
     def stop(a, b):   # "Fri Feb 19 – Sun Feb 21 · two nights in Susukino": the dates small and gold above the title-cased rest
@@ -118,7 +122,7 @@ def render(trip, name, password):
    <tr><td align="center" style="padding-top:16px;">{label(dates, MUTED)}</td></tr>
    <tr><td align="center" style="padding:26px 0 0;"><div style="width:1px;height:40px;background:{GOLD};opacity:.7;margin:0 auto;"></div></td></tr>
    <tr><td style="padding-top:28px;font-family:{SANS};font-size:16px;line-height:1.65;color:{INK};">Hi {esc(name)},</td></tr>
-   <tr><td style="padding-top:10px;font-family:{SANS};font-size:16px;line-height:1.65;color:{MUTED};">{esc(inv.get('intro', ''))}</td></tr>
+   {"".join(f'<tr><td style="padding-top:10px;font-family:{SANS};font-size:16px;line-height:1.65;color:{MUTED};">{esc(p)}</td></tr>' for p in paras)}
    <tr><td style="padding-top:28px;">{button(inv.get('planLabel', 'Trip Plan'), inv['plan'], True)}</td></tr>
    <tr><td style="padding-top:12px;">{button(inv.get('voteLabel', trip['title']), inv['vote'], False)}</td></tr>
    <tr><td style="padding-top:22px;">
@@ -136,7 +140,7 @@ def render(trip, name, password):
   </table></td></tr>
  <tr><td align="center" style="padding:24px 10px 0;font-family:{MONO};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:{DIM};">Corgi Capital &middot; Private</td></tr>
 </table></td></tr></table></body></html>"""
-    text = "\n".join([f"{trip['title']}: {title} {subtitle}, {dates}", "", f"Hi {name},", "", inv.get("intro", ""), "",
+    text = "\n".join([f"{trip['title']}: {title} {subtitle}, {dates}", "", f"Hi {name},", "", "\n\n".join(paras), "",
                       f"{inv.get('planLabel', 'Trip Plan')}: {inv['plan']}", f"{inv.get('voteLabel', trip['title'])}: {inv['vote']}",
                       f"Password: {password} (for the vote page; not secret, just keeps it private)", "", "The route:"]
                      + [f"  {a}: {title_case(b)}" for a, b in inv.get("stops", [])] + [""]
@@ -152,10 +156,11 @@ if __name__ == "__main__":
     a.add_argument("--name", required=True, help="the recipient's first name")
     a.add_argument("--password", required=True)
     a.add_argument("--out", required=True)
+    a.add_argument("--note", help="a personal message in place of the trip's intro, e.g. for a friend who isn't coming")
     o = a.parse_args()
     with open(o.file, encoding="utf-8") as f:
         trip = json.load(f)
-    doc, text = render(trip, o.name, o.password)
+    doc, text = render(trip, o.name, o.password, o.note)
     with open(o.out, "w", encoding="utf-8") as f:
         f.write(doc)
     with open(o.out + ".txt", "w", encoding="utf-8") as f:

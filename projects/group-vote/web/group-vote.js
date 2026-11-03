@@ -24,14 +24,15 @@ const ICON={
   todo:'<path d="M10.5 2.5l3 3-8 8h-3v-3z"/>',
   event:'<path d="M2.5 5h11v2a1.5 1.5 0 0 0 0 3v2h-11v-2a1.5 1.5 0 0 0 0-3z"/><path d="M9.5 5.5v1M9.5 8v1M9.5 10.5v1"/>',
   tastes:'<path d="M8 13.5S2.5 10.2 2.5 6.3A2.8 2.8 0 0 1 8 5a2.8 2.8 0 0 1 5.5 1.3C13.5 10.2 8 13.5 8 13.5z"/>',
+  avoid:'<circle cx="8" cy="8" r="5.5"/><path d="M4.1 11.9l7.8-7.8"/>',
   ig:'<rect x="2.5" y="2.5" width="11" height="11" rx="3.2"/><circle cx="8" cy="8" r="2.6"/><path d="M11.3 4.6v.1"/>',
   plus:'<path d="M8 3v10M3 8h10"/>',
   comment:'<path d="M2.5 3.5h11v7.5h-6.2L4.5 13.5V11h-2z"/><path d="M5.5 6.5h5M5.5 8.5h3"/>'
 };
-const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",izakaya:"izakaya",treats:"sweets",events:"event",todo:"todo"};
+const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",treats:"sweets",events:"event",todo:"todo"};
 const icon=k=>ICON[k]?'<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">'+ICON[k]+'</svg>':"";
 function pill(k,label,cls){ const s=el("span","tag"+(cls?" "+cls:"")); s.innerHTML=icon(k); s.appendChild(document.createTextNode(label)); return s }
-const FILTERS=[["all","All"],["slotted","On the Itinerary"],["casual","Casual"],["splurge","Splurge"],["izakaya","Izakaya"],["treats","Sweets & Drinks"],["events","Events"],["todo","Needs Rating"]];
+const FILTERS=[["all","All"],["slotted","On the Itinerary"],["casual","Casual"],["splurge","Splurge"],["treats","Sweets & Drinks"],["events","Events"],["todo","Needs Rating"]];
 // Card headings and award badges in title case. Small words stay lower case mid-title, and only a lower-case first
 // letter changes, so "IWSC", "TableCheck" and "2017-19" come through as written.
 const SMALL=new Set(["a","an","and","as","at","but","by","for","from","in","into","nor","of","on","or","per","the","to","via","vs","with"]);
@@ -180,7 +181,7 @@ function renderSugs(){
     const taste=s.kind==="taste", li=el("li","sug "+s.status), busy=s.status==="queued"||s.status==="working";
     li.appendChild(el("span","sug-st",(taste?TASTE_STATE:SUG_STATE)[s.status]||s.status));
     li.appendChild(el("span","sug-txt",busy?sugWhat(s.text)+" from "+s.by:money(s.reason||sugWhat(s.text))+" · "+s.by));
-    if(taste&&s.status==="added"){ const a=el("button","sug-see","See it"); a.type="button"; a.onclick=seeTastes; li.appendChild(a) }
+    if(taste&&s.status==="added"){ const a=el("button","sug-see","See it"); a.type="button"; a.onclick=()=>openSuggest("taste"); li.appendChild(a) }
     else if(s.item&&ITEMS.some(i=>i.id===s.item)){ const a=el("button","sug-see","See it"); a.type="button"; a.onclick=()=>seeItem(s.item); li.appendChild(a) }
     ul.appendChild(li) });
   S.appendChild(ul);
@@ -190,25 +191,38 @@ function seeItem(id){
   const k=cards[id]; if(!k) return;
   k.c.scrollIntoView({behavior:REDUCED?"auto":"smooth",block:"center"}); k.c.classList.remove("flash"); void k.c.offsetWidth; k.c.classList.add("flash");
 }
-function seeTastes(){
-  if(sortMode!=="region"||filter!=="all"){ sortMode="region"; filter="all"; syncTools(); render() }
-  const n=document.querySelector(".subnote"); if(n) n.scrollIntoView({behavior:REDUCED?"auto":"smooth",block:"center"});
-}
 function nudgeWho(){ const w=$("#whoWrap"); w.classList.remove("nudge"); void w.offsetWidth; w.classList.add("nudge"); toast("Pick your name first") }
-// One dialog for both: "spot" takes links or names (one per line, up to 5); "taste" takes one comment on what the group
-// loves or avoids, which the agent folds into the Group Tastes notes.
+// The Group Tastes as they stand, for the top of the dialog: what the group loves and avoids (short lists the agent keeps
+// up to date) and the spots someone called exactly right, each a button to its card. Before the agent has written the
+// lists, the notes themselves. Agent-written text goes in as text, never as HTML.
+function tastesNow(close){
+  const S=TRIP.tastesSummary||{}, box=el("div","sg-now"), ul=el("ul","tl");
+  [["loves","tastes"],["avoids","avoid"]].forEach(([k,ic])=>(S[k]||[]).forEach(t=>{ const li=el("li",k); li.innerHTML=icon(ic); li.appendChild(document.createTextNode(t)); ul.appendChild(li) }));
+  if(ul.children.length) box.appendChild(ul);
+  else if(TRIP.tastes) box.appendChild(el("p","sg-brief",TRIP.tastes));
+  const ex=(S.examples||[]).map(id=>ITEMS.find(i=>i.id===id)).filter(Boolean);
+  if(ex.length){ box.appendChild(el("p","sg-l","Spots That Nail It")); const row=el("div","tx");
+    ex.forEach(i=>{ const b=el("button","tx-b"); b.type="button"; b.dataset.id=i.id; b.innerHTML=icon("specialty"); b.appendChild(document.createTextNode(i.place+" · "+i.dish));
+      b.onclick=()=>{ close(); seeItem(i.id) }; row.appendChild(b) });
+    box.appendChild(row) }
+  return box.children.length?box:null;
+}
+// One dialog for both: "spot" takes links or names (one per line, up to 5). "taste" shows the Group Tastes as they stand
+// and takes one comment on what the group loves or avoids, which the agent folds in. Anyone can read the tastes; adding
+// anything needs a name.
 function openSuggest(kind){
-  if(!me) return nudgeWho();
+  const taste=kind==="taste";
+  if(!me&&!taste) return nudgeWho();
   if(document.querySelector(".sg")) return;
-  const taste=kind==="taste", from=document.activeElement;
+  const from=document.activeElement;
   const d=el("div","sg"); d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","sgTitle");
-  d.innerHTML='<form class="sg-card" novalidate><h2 id="sgTitle">'+(taste?"Add to Group Tastes":"Suggest a Spot")+'</h2>'
-    +(taste?'<p class="sg-help">What does this group love, or avoid? Our agent folds it into the Group Tastes notes, then goes looking for spots that fit and adds them under Group Tastes. It never removes any.</p>'
-      +'<label class="sg-l" for="sgText">Tastes</label><textarea id="sgText" rows="3" maxlength="500" placeholder="Spicy is always a plus&#10;Alice doesn&#39;t eat raw fish"></textarea>'
+  d.innerHTML='<form class="sg-card" novalidate tabindex="-1"><h2 id="sgTitle">'+(taste?"Group Tastes":"Suggest a Spot")+'</h2>'
+    +(taste?'<p class="sg-help">What does this group love, or avoid? Our agent folds it into these notes, then goes looking for spots that fit and adds them under Group Tastes. It never removes any.</p>'
+      +'<label class="sg-l" for="sgText">Add to Group Tastes</label><textarea id="sgText" rows="3" maxlength="500" placeholder="Spicy is always a plus&#10;Alice doesn&#39;t eat raw fish"></textarea>'
       :'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Our agent looks each one up, writes its card and adds it under Group Tastes (events under Events). It takes a minute or two, and everyone sees it.</p>'
       +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;Or a name and the location"></textarea>')
     +'<p class="sg-msg" role="status" aria-live="polite"></p>'
-    +'<div class="sg-row"><button type="button" class="sg-cancel">Cancel</button><button type="submit" class="sg-go">'+(taste?"Add":"Suggest")+'</button></div></form>';
+    +'<div class="sg-row"><button type="button" class="sg-cancel">'+(taste?"Close":"Cancel")+'</button><button type="submit" class="sg-go">'+(taste?"Add":"Suggest")+'</button></div></form>';
   document.body.appendChild(d); document.body.classList.add("lb-open");
   const f=d.querySelector("form"), ta=d.querySelector("#sgText"), msg=d.querySelector(".sg-msg"), go=d.querySelector(".sg-go");
   function close(){ d.remove(); document.body.classList.remove("lb-open"); removeEventListener("keydown",key,true); if(from&&from.focus) from.focus({preventScroll:true}) }
@@ -220,8 +234,10 @@ function openSuggest(kind){
   addEventListener("keydown",key,true);
   d.addEventListener("click",e=>{ if(e.target===d) close() });
   d.querySelector(".sg-cancel").onclick=close;
+  if(taste){ const now=tastesNow(close); if(now) f.insertBefore(now,f.querySelector(".sg-help")) }
   f.addEventListener("submit",async e=>{
     e.preventDefault();
+    if(!me){ close(); return nudgeWho() }
     const lines=ta.value.split("\n").map(s=>s.trim()).filter(Boolean);
     if(!lines.length){ msg.textContent=taste?"Write what the group loves or avoids.":"Paste a link or type a name."; ta.focus(); return }
     if(!taste&&lines.length>5){ msg.textContent="Up to 5 at a time, please."; ta.focus(); return }
@@ -233,7 +249,7 @@ function openSuggest(kind){
     else if(j&&j.error==="code") lockOut(CHANGED);
     else msg.textContent=j&&j.error==="limit"?"That's today's limit for suggestions. Try again tomorrow.":j&&j.error==="text"?(taste?"Keep it to a short comment.":"One link or name per line, up to 5."):"Couldn't send that. Try again in a moment.";
   });
-  ta.focus();
+  if(taste) f.focus({preventScroll:true}); else ta.focus();   // the tastes open to read: no keyboard popping up over them
 }
 function saveVote(){
   const who=me; if(!who) return;
@@ -432,7 +448,6 @@ const mineOf=id=>me&&ballots[me]?ballots[me][id]:undefined;
 function visibleItems(){
   if(filter==="casual") return ITEMS.filter(i=>i.tier==="casual");
   if(filter==="splurge") return ITEMS.filter(i=>i.tier==="splurge");
-  if(filter==="izakaya") return ITEMS.filter(i=>i.izakaya);
   if(filter==="treats") return ITEMS.filter(i=>i.kind==="sweets"||i.kind==="drinks");
   if(filter==="events") return ITEMS.filter(i=>i.kind==="event"||i.group==="event");
   if(filter==="todo") return ITEMS.filter(i=>typeof mineOf(i.id)!=="number");
@@ -603,7 +618,7 @@ function render(){
       parts.push(["",TRIP.otherLabel||"More to Try",its.filter(i=>!GROUPS.some(([k])=>k===i.group))]);
       const used=parts.filter(([,,v])=>v.length);
       used.forEach(([k,label,v])=>{ if(used.length>1){ const sh=el("h3","sub",label); sh.appendChild(el("small",null,String(v.length)));
-          if(k==="tastes"){ const t=el("button","tastes-btn"); t.type="button"; t.innerHTML=icon("comment"); t.title="Add to Group Tastes"; t.setAttribute("aria-label","Add to Group Tastes"); t.onclick=()=>openSuggest("taste"); sh.appendChild(t) }
+          if(k==="tastes"){ const t=el("button","tastes-btn"); t.type="button"; t.innerHTML=icon("comment"); t.title="See or add to Group Tastes"; t.setAttribute("aria-label","See or add to Group Tastes"); t.onclick=()=>openSuggest("taste"); sh.appendChild(t) }
           s.appendChild(sh)
           if(k==="tastes"&&TRIP.tastesLine) s.appendChild(el("p","subnote",TRIP.tastesLine)) }
         const grid=el("div","grid"); v.forEach(i=>grid.appendChild(card(i))); s.appendChild(grid) });
@@ -650,7 +665,7 @@ function mountBallot(){
     a.onclick=e=>{ e.preventDefault(); if(filter!=="all"){ filter="all"; syncTools(); render() }
       const s=document.getElementById("region-"+slug(g)); if(s) s.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) };
     jump.appendChild(a) });
-  const F=$("#filters"), has={slotted:ITEMS.some(i=>i.slot), casual:ITEMS.some(i=>i.tier==="casual"), splurge:ITEMS.some(i=>i.tier==="splurge"), izakaya:ITEMS.some(i=>i.izakaya), treats:ITEMS.some(i=>i.kind==="sweets"||i.kind==="drinks")};
+  const F=$("#filters"), has={slotted:ITEMS.some(i=>i.slot), casual:ITEMS.some(i=>i.tier==="casual"), splurge:ITEMS.some(i=>i.tier==="splurge"), treats:ITEMS.some(i=>i.kind==="sweets"||i.kind==="drinks")};
   FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip"); b.innerHTML=icon(FILTER_ICON[f]); b.appendChild(document.createTextNode(label)); b.type="button"; b.dataset.f=f;
     if(f==="todo"){ const c=el("span","cnt"); c.id="todoCount"; c.hidden=true; b.appendChild(c) }   // how many you haven't rated
     F.appendChild(b) });

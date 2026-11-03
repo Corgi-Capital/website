@@ -53,7 +53,7 @@ def check_page(page):
                "group": {"specialty", "favorite", "tastes", "event"}}
     bad_labels = [f"{i.get('id')}.{k}" for i in items for k, ok in allowed.items() if k in i and i[k] not in ok]
     bad_slot = [i.get("id") for i in items if "slot" in i and not (isinstance(i["slot"], bool) or (isinstance(i["slot"], str) and 0 < len(i["slot"]) <= 40))]
-    bad_flags = [i.get("id") for i in items if "izakaya" in i and not isinstance(i["izakaya"], bool)]   # the Izakaya filter
+    bad_flags = [i.get("id") for i in items if "izakaya" in i and not isinstance(i["izakaya"], bool)]   # the Izakaya pill
     known = page.get("knownFor", {})
     bad_known = not isinstance(known, dict) or any(not isinstance(v, list) or not all(isinstance(x, str) for x in v) for v in known.values())
     # time: per region, the stays there, e.g. ["2/19 1PM - 2/21 12PM", "2/20 10AM - 5PM", "2/22"] (a bare date is 9AM-11PM)
