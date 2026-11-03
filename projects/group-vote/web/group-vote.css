@@ -68,6 +68,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .filters .chip{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:4px 13px;font-size:13px}
 /* Needs Rating's count of spots you haven't rated: a notification-red badge in either palette. */
 .chip .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin:-2px -5px -2px 1px;padding:0 6px;border-radius:999px;background:#e5484d;color:#fff;font:700 11px/1 var(--mono);letter-spacing:0}
+.chip .cnt[hidden]{display:none}   /* nothing left to rate: no badge */
 .filters .chip[aria-pressed="true"]{border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2);font-weight:500}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-left:auto}
 .key{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font:400 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
