@@ -10,7 +10,18 @@ let TRIP={}, TRAVELERS=[], ITEMS=[], REGIONS=[];   // filled in from the server 
 const VLABEL={3:"Must",2:"I want",1:"Meh",0:"Nah"};   // shown in capitals; 3/2/1/0 points
 const GROUPS=[["specialty","Regional specialties"],["favorite","Local favorites"]];
 const TIER={casual:"Casual",mid:"Mid-range",splurge:"Splurge"};
-const FILTERS=[["all","All"],["slotted","On the itinerary"],["casual","Casual"],["splurge","Splurge"],["treats","Sweets & drinks"],["todo","To rate"]];
+const FILTERS=[["all","All"],["slotted","On the itinerary"],["casual","Casual"],["splurge","Splurge"],["izakaya","Izakaya"],["treats","Sweets & drinks"],["todo","To rate"]];
+// Card headings and award badges in title case. Small words stay lower case mid-title, and only a lower-case first
+// letter changes, so "IWSC", "TableCheck" and "2017-19" come through as written.
+const SMALL=new Set(["a","an","and","as","at","but","by","for","from","in","into","nor","of","on","or","per","the","to","via","vs","with"]);
+function titleCase(s){
+  const ws=String(s||"").split(" ");
+  return ws.map((w,i)=>w.split("-").map((p,j)=>{
+    const m=/^([^\p{L}]*)(\p{Ll})(.*)$/u.exec(p); if(!m) return p;
+    const small=SMALL.has((m[2]+m[3]).replace(/[^\p{L}]/gu,""))&&!m[1]&&(i>0||j>0)&&i<ws.length-1&&!/:$/.test(ws[i-1]||"");
+    return small?p:m[1]+m[2].toUpperCase()+m[3];
+  }).join("-")).join(" ");
+}
 const BOWL=(broth,top)=>`<ellipse cx="50" cy="52" rx="38" ry="12" fill="${broth}"/>${top}<path d="M12 52 Q14 84 50 86 Q86 84 88 52 Z" fill="#f4efe6" stroke="#c9bfae" stroke-width="1.5"/><path d="M20 70 Q50 78 80 70" stroke="#b23a2e" stroke-width="2.5" fill="none"/>`;
 const NOODLE=c=>`<path d="M22 50 q6-5 12 0 t12 0 t12 0 t12 0 t10 0" stroke="${c}" stroke-width="2.2" fill="none"/><path d="M24 55 q6-5 12 0 t12 0 t12 0 t12 0" stroke="${c}" stroke-width="2.2" fill="none"/>`;
 const ART={
@@ -44,7 +55,9 @@ ice:`<rect x="8" y="78" width="84" height="8" fill="#e8f1f7"/><path d="M30 78 L3
 burger:`<path d="M16 46 Q16 22 50 22 Q84 22 84 46 Z" fill="#e0a24a"/><g fill="#fff4d6"><ellipse cx="38" cy="31" rx="2.2" ry="1.3"/><ellipse cx="52" cy="28" rx="2.2" ry="1.3"/><ellipse cx="64" cy="34" rx="2.2" ry="1.3"/><ellipse cx="45" cy="38" rx="2.2" ry="1.3"/></g><path d="M14 49 q6 6 12 0 t12 0 t12 0 t12 0 t12 0 t12 0" stroke="#7cb342" stroke-width="5" fill="none"/><path d="M18 52 L82 52 L76 61 L68 54 L58 62 L48 54 L38 62 L28 54 Z" fill="#f2c94c"/><rect x="16" y="56" width="68" height="12" rx="6" fill="#6b3a1f"/><path d="M18 70 L82 70 Q82 82 50 82 Q18 82 18 70 Z" fill="#d9953f"/>`,
 onigiri:`<path d="M50 16 Q57 16 61 24 L84 64 Q88 76 76 78 L24 78 Q12 76 16 64 L39 24 Q43 16 50 16 Z" fill="#fbf8f1" stroke="#e3dccb" stroke-width="1.5"/><rect x="36" y="54" width="28" height="24" rx="2" fill="#1f2a24"/><circle cx="50" cy="40" r="5" fill="#e04a3a"/>`,
 yakitori:`<g stroke="#c8a77a" stroke-width="3" stroke-linecap="round"><path d="M12 82 L82 22"/><path d="M24 88 L92 32"/></g><g fill="#b5683a"><circle cx="30" cy="66" r="8"/><circle cx="56" cy="44" r="8"/></g><g fill="#7cb342"><circle cx="43" cy="55" r="6"/></g><g fill="#c97a45"><circle cx="44" cy="70" r="8"/><circle cx="58" cy="58" r="8"/><circle cx="72" cy="46" r="8"/></g><path d="M40 68 l8 -6 M54 56 l8 -6 M68 44 l8 -6" stroke="#8a4a24" stroke-width="2"/>`,
-truck:`<path d="M10 40 L64 40 L58 31 L16 31 Z" fill="#f6c453"/><rect x="10" y="40" width="54" height="30" rx="4" fill="#e85d4f"/><rect x="17" y="46" width="40" height="12" rx="2" fill="#ffe8b3"/><rect x="64" y="48" width="24" height="22" rx="3" fill="#c94a3e"/><rect x="68" y="52" width="13" height="9" rx="1" fill="#bfe3f2"/><circle cx="26" cy="72" r="7" fill="#2b2e33"/><circle cx="26" cy="72" r="3" fill="#8a9099"/><circle cx="74" cy="72" r="7" fill="#2b2e33"/><circle cx="74" cy="72" r="3" fill="#8a9099"/><path d="M30 26 q3-6 0-12 M40 26 q3-6 0-12" stroke="#c8d2da" stroke-width="2" fill="none"/>`
+truck:`<path d="M10 40 L64 40 L58 31 L16 31 Z" fill="#f6c453"/><rect x="10" y="40" width="54" height="30" rx="4" fill="#e85d4f"/><rect x="17" y="46" width="40" height="12" rx="2" fill="#ffe8b3"/><rect x="64" y="48" width="24" height="22" rx="3" fill="#c94a3e"/><rect x="68" y="52" width="13" height="9" rx="1" fill="#bfe3f2"/><circle cx="26" cy="72" r="7" fill="#2b2e33"/><circle cx="26" cy="72" r="3" fill="#8a9099"/><circle cx="74" cy="72" r="7" fill="#2b2e33"/><circle cx="74" cy="72" r="3" fill="#8a9099"/><path d="M30 26 q3-6 0-12 M40 26 q3-6 0-12" stroke="#c8d2da" stroke-width="2" fill="none"/>`,
+izakaya:`<rect x="8" y="86" width="84" height="4" rx="2" fill="#8a6a4a"/><path d="M33 4 L33 13" stroke="#3a2a20" stroke-width="2"/><rect x="23" y="12" width="20" height="6" rx="2" fill="#2b2420"/><ellipse cx="33" cy="39" rx="20" ry="22" fill="#d9432f"/><path d="M14 31 Q33 35 52 31 M13 39 Q33 43 53 39 M14 47 Q33 51 52 47" stroke="#a8301f" stroke-width="1.5" fill="none"/><ellipse cx="26" cy="33" rx="4" ry="9" fill="#ef6a52" opacity=".7"/><rect x="23" y="59" width="20" height="6" rx="2" fill="#2b2420"/><path d="M33 65 L33 72" stroke="#2b2420" stroke-width="2"/><rect x="66" y="40" width="8" height="15" rx="3" fill="#f1ead9"/><ellipse cx="70" cy="40" rx="5.5" ry="2" fill="#e6dcc6"/><path d="M66 53 Q56 63 57 73 Q58 86 70 86 Q82 86 83 73 Q84 63 74 53 Z" fill="#f1ead9"/><path d="M58 70 Q70 74 82 70" stroke="#3b6aa0" stroke-width="2.5" fill="none"/><path d="M38 76 L52 76 L50 86 L40 86 Z" fill="#f1ead9"/><ellipse cx="45" cy="76" rx="7" ry="2" fill="#d9c9a5"/>`,
+robata:`<rect x="10" y="62" width="80" height="22" rx="3" fill="#7a4e2d"/><rect x="10" y="62" width="80" height="5" fill="#8f5d36"/><g fill="#e8572f"><circle cx="22" cy="60" r="4"/><circle cx="34" cy="61" r="4"/><circle cx="46" cy="60" r="4"/><circle cx="58" cy="61" r="4"/><circle cx="70" cy="60" r="4"/><circle cx="80" cy="61" r="3.5"/></g><g fill="#f6a03a"><circle cx="28" cy="58" r="2"/><circle cx="52" cy="58" r="2"/><circle cx="74" cy="58" r="2"/></g><path d="M12 54 L88 54" stroke="#4a4f55" stroke-width="2"/><ellipse cx="34" cy="46" rx="20" ry="7" fill="#c98a4a"/><path d="M54 46 L64 39 L64 53 Z" fill="#b5763a"/><circle cx="19" cy="44.5" r="1.6" fill="#2b2420"/><path d="M28 41 l4 10 M36 40 l4 11 M44 41 l4 10" stroke="#8a5428" stroke-width="1.6"/><path d="M68 52 Q64 38 77 36 Q90 38 86 52 Z" fill="#f2d3b0"/><path d="M77 37 L72 51 M77 37 L77 51 M77 37 L82 51" stroke="#d9ae86" stroke-width="1.2"/><path d="M30 30 q3-6 0-12 M44 28 q3-6 0-12" stroke="#c8d2da" stroke-width="2" fill="none"/>`
 };
 const $=s=>document.querySelector(s);
 function el(tag,cls,text){const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e}
@@ -155,7 +168,19 @@ async function reserve(kind){
   else if(j&&j.error==="limit"&&!budgetSpent){ budgetSpent=true; banner("This month's photo budget is used up, so places show illustrations until next month. Each Google Maps button still has every photo.") }
   return false;
 }
-function photosOff(){ if(photosDown) return; photosDown=true; banner("Google isn't sending photos right now, so places show illustrations. Each Google Maps button still has every photo.") }
+// The page can't see why Google refused (the browser hides the answer), but it's nearly always the daily photo quota,
+// which resets at midnight Pacific: say when that is in the viewer's own time.
+function quotaReset(){
+  try{
+    const now=new Date(), parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/Los_Angeles",hourCycle:"h23",hour:"numeric",minute:"numeric",second:"numeric"}).formatToParts(now);
+    const g=t=>+parts.find(x=>x.type===t).value, left=86400-(g("hour")%24*3600+g("minute")*60+g("second"));
+    return new Date(now.getTime()+left*1000).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+  }catch(e){ return "" }
+}
+function photosOff(){
+  if(photosDown) return; photosDown=true; const at=quotaReset();
+  banner("Google isn't sending photos right now. That's usually its daily photo limit"+(at?", which resets at "+at+" your time":"")+". Until then places show illustrations, and each Google Maps button has every photo.");
+}
 function wantPhoto(id){ if(tried[id]) return; tried[id]=true; queue.push(id); pumpPhotos() }
 function pumpPhotos(){
   while(placesLib&&!mapsDown&&!photosDown&&!budgetSpent&&queue.length&&active<(worked?3:1)){
@@ -286,6 +311,7 @@ const mineOf=id=>me&&ballots[me]?ballots[me][id]:undefined;
 function visibleItems(){
   if(filter==="casual") return ITEMS.filter(i=>i.tier==="casual");
   if(filter==="splurge") return ITEMS.filter(i=>i.tier==="splurge");
+  if(filter==="izakaya") return ITEMS.filter(i=>i.izakaya);
   if(filter==="treats") return ITEMS.filter(i=>i.kind==="sweets"||i.kind==="drinks");
   if(filter==="todo") return ITEMS.filter(i=>typeof mineOf(i.id)!=="number");
   if(filter==="slotted") return ITEMS.filter(i=>i.slot);
@@ -310,6 +336,7 @@ function card(it,rank){
   if(it.score) tags.appendChild(el("span","score", it.score==="n/a"?"Not on Tabelog":(TRIP.scoreLabel||"Rating")+" "+it.score));
   if(it.badge) tags.appendChild(el("span","badge",it.badge));
   if(TIER[it.tier]) tags.appendChild(el("span","tag",TIER[it.tier]));
+  if(it.izakaya) tags.appendChild(el("span","tag","Izakaya"));
   if(it.kind==="sweets"||it.kind==="drinks") tags.appendChild(el("span","tag",it.kind==="sweets"?"Sweets":"Drinks"));
   if(rank&&it.group==="specialty") tags.appendChild(el("span","tag spec","Regional specialty"));
   b.appendChild(tags);
@@ -421,9 +448,9 @@ function mountBallot(){
     +'<div class="counts"><span id="mine"></span><span class="status" id="status"></span></div></div>'
     +'<div class="progress" aria-hidden="true"><i id="progress"></i></div></div>'
     +'<div class="tools"><div class="seg" id="sort" role="group" aria-label="Sort"><button type="button" data-s="region">Region</button><button type="button" data-s="rank">Ranking</button></div>'
-    +'<div class="filters" id="filters" role="group" aria-label="Show"></div><span class="key"><i class="k3"></i>Must 3<i class="k2"></i>I want 2<i class="k1"></i>Meh 1<i class="k0"></i>Nah 0</span></div>'
+    +'<div class="filters" id="filters" role="group" aria-label="Show"></div><div class="legend"><span class="key"><i class="k3"></i>Must 3<i class="k2"></i>I want 2<i class="k1"></i>Meh 1<i class="k0"></i>Nah 0</span>'
+    +'<button type="button" class="cbt" id="cbt" aria-pressed="false" title="Blue to orange instead of green to red"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>Color-blind colors</button></div></div>'
     +'<main class="list" id="list"></main>'
-    +'<footer class="ft"><p class="gattr">Photos and places from <span translate="no">Google Maps</span>; tap a photo to see who took it. Ratings from Tabelog.</p></footer>'
     +'<div class="toast" id="toast" role="status" aria-live="polite"></div>';
   document.body.appendChild(v);
   document.title=TRIP.title||"Trip vote"; $("#title").textContent=TRIP.title||""; $("#intro").textContent=TRIP.intro||"";
@@ -433,12 +460,22 @@ function mountBallot(){
     a.onclick=e=>{ e.preventDefault(); if(filter!=="all"){ filter="all"; syncTools(); render() }
       const s=document.getElementById("region-"+slug(g)); if(s) s.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) };
     jump.appendChild(a) });
-  const F=$("#filters"), has={slotted:ITEMS.some(i=>i.slot), casual:ITEMS.some(i=>i.tier==="casual"), splurge:ITEMS.some(i=>i.tier==="splurge"), treats:ITEMS.some(i=>i.kind==="sweets"||i.kind==="drinks")};
+  const F=$("#filters"), has={slotted:ITEMS.some(i=>i.slot), casual:ITEMS.some(i=>i.tier==="casual"), splurge:ITEMS.some(i=>i.tier==="splurge"), izakaya:ITEMS.some(i=>i.izakaya), treats:ITEMS.some(i=>i.kind==="sweets"||i.kind==="drinks")};
   FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip",label); b.type="button"; b.dataset.f=f; F.appendChild(b) });
   F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; syncTools(); render() });
   $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render() });
   $("#lock").addEventListener("click",()=>{ ls("code",null); ls("me",null); location.reload() });
+  let cb=false; try{ cb=localStorage.getItem("gv-cb")==="1" }catch(e){}
+  setCb(cb); $("#cbt").addEventListener("click",()=>setCb(!document.documentElement.classList.contains("cb"),true));
   syncTools();
+}
+// Color-blind colors: the vote scale runs blue to orange instead of green to red. Remembered on this device, for every
+// trip.
+function setCb(on,say){
+  document.documentElement.classList.toggle("cb",on);
+  const b=$("#cbt"); if(b) b.setAttribute("aria-pressed",String(on));
+  try{ if(on) localStorage.setItem("gv-cb","1"); else localStorage.removeItem("gv-cb") }catch(e){}
+  if(say) toast(on?"Color-blind colors on":"Standard colors");
 }
 
 // ---------- Password gate ----------
@@ -499,7 +536,8 @@ function boot(){
     if(fine) input.focus();
   }
   function open(j){
-    TRIP=j.trip||{}; TRAVELERS=TRIP.travelers||[]; ITEMS=TRIP.items||[]; REGIONS=TRIP.regions||[];
+    TRIP=j.trip||{}; TRAVELERS=TRIP.travelers||[]; REGIONS=TRIP.regions||[];
+    ITEMS=(TRIP.items||[]).map(i=>Object.assign({},i,{dish:titleCase(i.dish),badge:titleCase(i.badge)}));
     me=ls("me"); if(TRAVELERS.indexOf(me)<0) me=null;
     ballots=j.ballots||{};
     const swap=()=>{

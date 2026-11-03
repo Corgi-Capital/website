@@ -13,7 +13,7 @@
    "dish": "Miso ramen", "place": "Example Noodle House", "area": "Station", "score": "3.80", "badge": "Ramen top 100",
    "note": "Walk-in, closed Mon.", "url": "https://tabelog.com/en/"},
   {"id": "bar", "art": "cocktail", "q": "Example Cocktail Bar",
-   "r": "Harbor", "kind": "drinks", "tier": "mid", "group": "favorite",
+   "r": "Harbor", "kind": "drinks", "tier": "mid", "group": "favorite", "izakaya": true,
    "dish": "Cocktail bar", "place": "Example Cocktail Bar", "area": "Waterfront", "score": "n/a", "badge": "", "note": "", "url": ""}
  ]
 }

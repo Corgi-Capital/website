@@ -12,9 +12,10 @@ Each trip sits behind a password. The public page holds only the trip id and sho
 
 ## The page
 
-- Each place is a card: a photo strip you can swipe (arrows on desktop, tap for full screen), the place's Tabelog score and tags, a **Tabelog** button (or the place's own site) and a **Google Maps** button for every photo and review, your vote, and the group's tally with each person's initial in their vote's color.
+- Each place is a card: a photo strip you can swipe (arrows on desktop, tap for full screen), a title-case heading, the place's Tabelog score and tags, a **Tabelog** button (or the place's own site) and a **Google Maps** button for every photo and review, your vote, and the group's tally with each person's initial in their vote's color.
 - **Region** groups places by where you'll be, each region split into regional specialties and local favorites, under a "Known for" line. **Ranking** sorts by the group's total.
-- Filters: On the itinerary, Casual, Splurge, Sweets & drinks, To rate (places you haven't rated).
+- Filters: On the itinerary, Casual, Splurge, Izakaya, Sweets & drinks, To rate (places you haven't rated).
+- Vote colors: green, light green, yellow, red. **Color-blind colors** (next to the key) switches to blue, pale blue, pale yellow, orange, which stay distinct with red-green or blue-yellow color blindness; each device remembers the choice. Both sets were picked by measured color difference, readable as text and as fills.
 - The scoreboard at the top counts, per person, how many of their MUSTs, I WANTs, MEHs and NAHs got a dedicated itinerary slot. Every place stays on the itinerary as an alternative; `slot` marks the ones with a slot of their own.
 
 ## One-time setup
@@ -61,7 +62,7 @@ The count covers every trip page, since they share one key. Reserving needs a tr
 
 1. Write `trips/<id>.json`, starting from `trip.example.json`:
    - Trip: `id`, `title`, `intro`, `travelers`, `region` (country code for searches), `regions` (in order), `knownFor` (per region, a few things it's known for).
-   - Each place: `id`, `r` (its region), `dish`, `place`, `area`, `score` (Tabelog, or "n/a"), `badge`, `note`, `url` (its Tabelog page, or its own site), `art` (the illustration shown until a photo loads; see `ART` in `web/group-vote.js`) and `q` (a Google Maps search that finds it). Optional: `kind` (meal / sweets / drinks), `tier` (casual / mid / splurge), `group` (specialty / favorite), `placeId`, `photos`, `slot`.
+   - Each place: `id`, `r` (its region), `dish`, `place`, `area`, `score` (Tabelog, or "n/a"), `badge`, `note`, `url` (its Tabelog page, or its own site), `art` (the illustration shown until a photo loads; see `ART` in `web/group-vote.js`) and `q` (a Google Maps search that finds it). Optional: `kind` (meal / sweets / drinks), `tier` (casual / mid / splurge), `group` (specialty / favorite), `izakaya` (true puts it under the Izakaya filter), `placeId`, `photos`, `slot`. Write `dish` and `badge` in plain sentence case; the page shows them in title case.
 2. Upload it with a password:
    ```bash
    python server/create_trip.py --table <TableName> --file trips/tokyo-2027.json --code "<password>"

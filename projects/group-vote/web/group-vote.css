@@ -4,12 +4,17 @@
 :root{
   --bg:#0b0b0b; --surface:#131313; --surface-2:#1b1b1b; --ink:#f0ece0; --muted:rgba(240,236,224,.7); --faint:rgba(240,236,224,.46);
   --line:rgba(240,236,224,.12); --gold:#c9a55a; --gold-2:#e2c88e; --gold-dim:rgba(201,165,90,.62); --gold-line:rgba(201,165,90,.32); --gold-wash:rgba(201,165,90,.12);
-  --must:#43c774; --want:#b5d43f; --meh:#f2c94c; --nah:#ef5f53;   /* 3, 2, 1, 0 points */
+  /* Vote scale, 3, 2, 1, 0 points. Chosen by measured color difference (CIEDE2000) with each color readable as text on
+     the vote buttons and under black text when filled. Standard: green, light green, yellow, red. Color-blind (the
+     toggle, html.cb): blue, pale blue, pale yellow, orange, which stays apart for red-green and blue-yellow color
+     blindness too. */
+  --must:#31aa95; --want:#9bec71; --meh:#fdcf40; --nah:#f65f56;
   --display:"Cormorant Garamond", Georgia, serif;
   --body:"Zen Kaku Gothic New", "Hiragino Sans", system-ui, -apple-system, sans-serif;
   --mono:"Inconsolata", ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme:dark;
 }
+:root.cb{--must:#4f8ff0; --want:#b5dbfb; --meh:#ffe38a; --nah:#ec671e}
 *,*::before,*::after{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
@@ -60,13 +65,18 @@ button{font:inherit;color:inherit;cursor:pointer}
 .filters::-webkit-scrollbar{display:none}
 .filters .chip{min-height:32px;padding:4px 13px;font-size:13px}
 .filters .chip[aria-pressed="true"]{border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2);font-weight:500}
-.key{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-left:auto;font:400 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-left:auto}
+.key{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font:400 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
 .key i{width:9px;height:9px;margin-right:-5px;border-radius:50%}
 .key .k3,.dot.v3{background:var(--must)} .key .k2,.dot.v2{background:var(--want)} .key .k1,.dot.v1{background:var(--meh)} .key .k0,.dot.v0{background:var(--nah)}
-@media (max-width:640px){.key{margin-left:0}.filters{flex:1 1 100%}}
+.cbt{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:4px 11px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--faint);font:400 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+.cbt svg{width:13px;height:13px;flex:none}
+.cbt:hover{border-color:var(--gold-line);color:var(--ink)}
+.cbt[aria-pressed="true"]{border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2)}
+@media (max-width:640px){.legend{margin-left:0}.filters{flex:1 1 100%}}
 
 /* ---------- Regions ---------- */
-.list{max-width:1200px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px))}
+.list{max-width:1200px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) max(40px,calc(env(safe-area-inset-bottom,0px) + 24px)) max(16px,env(safe-area-inset-left,0px))}
 .region{scroll-margin-top:110px}
 .sec{display:flex;align-items:baseline;gap:12px;margin:34px 0 4px;font:600 34px/1.1 var(--display)}
 .sec small{font:400 12px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--gold-dim)}
@@ -129,9 +139,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .dot{display:grid;place-items:center;width:27px;height:27px;border:1px dashed rgba(240,236,224,.3);border-radius:50%;color:var(--faint);font:700 11px var(--mono)}
 .dot.v3,.dot.v2,.dot.v1,.dot.v0{border:0;color:#0b0b0b}
 
-/* ---------- Footer, toast ---------- */
-.ft{max-width:1200px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right,0px)) max(32px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
-.gattr{margin:0;color:var(--faint);font-size:12px}
+/* ---------- Toast ---------- */
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:30;padding:10px 16px;border:1px solid var(--gold-line);border-radius:999px;background:#1d1d1d;color:var(--ink);font-size:14px;opacity:0;pointer-events:none;transform:translate(-50%,16px);transition:opacity .2s,transform .2s}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 
