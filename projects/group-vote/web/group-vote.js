@@ -9,7 +9,22 @@ const TRIP_ID=String((window.TRIP&&window.TRIP.id)||"");
 let TRIP={}, TRAVELERS=[], ITEMS=[], REGIONS=[];   // filled in from the server once the password checks out
 const VLABEL={3:"Must",2:"I want",1:"Meh",0:"Nah"};   // shown in capitals; 3/2/1/0 points
 const GROUPS=[["specialty","Regional specialties"],["favorite","Local favorites"]];
-const TIER={casual:"Casual",mid:"Mid-range",splurge:"Splurge"};
+const TIER={casual:"Casual",mid:"Mid-Range",splurge:"Splurge"};
+// Small line icons for the card pills and the matching filters (16px grid, drawn in the text color).
+const ICON={
+  casual:'<path d="M2.5 8.5h11a5.5 5.5 0 0 1-11 0z"/><path d="M6 6.5l6.5-4M8.5 6.5l5.5-3"/>',
+  mid:'<path d="M4.5 2v4a1.5 1.5 0 0 0 3 0V2M6 7.5V14M11.5 14V2c-1.6.8-2.3 2.6-2.3 5.2h2.3"/>',
+  splurge:'<path d="M4.2 2.5h7.6L14.5 6 8 13.5 1.5 6z"/><path d="M1.5 6h13M6.3 2.5 8 13.5l1.7-11"/>',
+  sweets:'<path d="M4.6 7.4a3.4 3.4 0 1 1 6.8 0z"/><path d="M5 7.4 8 14l3-6.6"/>',
+  drinks:'<path d="M2.5 2.5h11L8 8.5z"/><path d="M8 8.5v5M5.5 13.5h5"/>',
+  izakaya:'<path d="M6 2h4M6 14h4M8 3.2c-2.9 0-4.6 2.1-4.6 4.8s1.7 4.8 4.6 4.8 4.6-2.1 4.6-4.8S10.9 3.2 8 3.2z"/><path d="M3.5 6.4h9M3.5 9.6h9"/>',
+  specialty:'<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>',
+  slotted:'<path d="M2.5 3.5h11v10h-11zM2.5 6.5h11M5.5 2v3M10.5 2v3"/><path d="M5.8 10.1l1.6 1.6 3-3"/>',
+  todo:'<path d="M10.5 2.5l3 3-8 8h-3v-3z"/>'
+};
+const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",izakaya:"izakaya",treats:"sweets",todo:"todo"};
+const icon=k=>ICON[k]?'<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">'+ICON[k]+'</svg>':"";
+function pill(k,label,cls){ const s=el("span","tag"+(cls?" "+cls:"")); s.innerHTML=icon(k); s.appendChild(document.createTextNode(label)); return s }
 const FILTERS=[["all","All"],["slotted","On the Itinerary"],["casual","Casual"],["splurge","Splurge"],["izakaya","Izakaya"],["treats","Sweets & Drinks"],["todo","Needs Rating"]];
 // Card headings and award badges in title case. Small words stay lower case mid-title, and only a lower-case first
 // letter changes, so "IWSC", "TableCheck" and "2017-19" come through as written.
@@ -333,14 +348,21 @@ function card(it,rank){
   b.appendChild(el("h3","dish",it.dish));
   b.appendChild(el("div","place",it.place+(it.area?" · "+it.area:"")));
   const tags=el("div","tags");
-  if(it.score) tags.appendChild(el("span","score", it.score==="n/a"?"Not on Tabelog":(TRIP.scoreLabel||"Rating")+" "+it.score));
+  if(it.score){ const sc=el("span","score");
+    if(it.score==="n/a") sc.textContent="Not on Tabelog";
+    else { sc.textContent=(TRIP.scoreLabel||"Rating")+" "; const num=el("b",null,it.score), g=GRADE[it.id];
+      if(g){ num.className="grad"; num.style.setProperty("--t",g.t.toFixed(3)); sc.title="#"+g.rank+" of "+g.n+" rated in "+it.r }
+      sc.appendChild(num) }
+    tags.appendChild(sc) }
   if(it.badge) tags.appendChild(el("span","badge",it.badge));
-  if(TIER[it.tier]) tags.appendChild(el("span","tag",TIER[it.tier]));
-  if(it.izakaya) tags.appendChild(el("span","tag","Izakaya"));
-  if(it.kind==="sweets"||it.kind==="drinks") tags.appendChild(el("span","tag",it.kind==="sweets"?"Sweets":"Drinks"));
-  if(rank&&it.group==="specialty") tags.appendChild(el("span","tag spec","Regional specialty"));
+  if(TIER[it.tier]) tags.appendChild(pill(it.tier,TIER[it.tier]));
+  if(it.izakaya) tags.appendChild(pill("izakaya","Izakaya"));
+  if(it.kind==="sweets"||it.kind==="drinks") tags.appendChild(pill(it.kind,it.kind==="sweets"?"Sweets":"Drinks"));
+  if(rank&&it.group==="specialty") tags.appendChild(pill("specialty","Regional Specialty","spec"));
   b.appendChild(tags);
   if(it.note) b.appendChild(el("p","note",it.note));
+  // The links, vote and tally sit together at the foot of the card with fixed gaps, so cards in a row line up.
+  const act=el("div","act");
   // Tabelog (or the place's own page) first, then Google Maps: whichever the place has.
   const links=el("div","links");
   if(it.url){ let h=""; try{ h=new URL(it.url).hostname }catch(e){}
@@ -349,11 +371,12 @@ function card(it,rank){
   if(it.placeId||it.q){ const g=el("a","lnk gmaps"); g.href=mapsLink(it); g.target="_blank"; g.rel="noopener"; g.dataset.id=it.id;
     g.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
     g.appendChild(gm()); g.setAttribute("aria-label",it.place+" on Google Maps: every photo and review"); links.appendChild(g) }
-  if(links.firstChild) b.appendChild(links);
+  if(links.firstChild) act.appendChild(links);
   const vote=el("div","vote"); vote.setAttribute("role","group"); vote.setAttribute("aria-label","Your vote: "+it.dish);
   [3,2,1,0].forEach(v=>{const btn=el("button",null,VLABEL[v]); btn.type="button"; btn.dataset.v=v; btn.id="v-"+it.id+"-"+v; btn.onclick=()=>cast(it.id,v); vote.appendChild(btn)});
-  b.appendChild(vote);
-  const tally=el("div","tally"); b.appendChild(tally);
+  act.appendChild(vote);
+  const tally=el("div","tally"); act.appendChild(tally);
+  b.appendChild(act);
   c.appendChild(b);
   cards[it.id]={c,ph,vote,tally};
   patch(it.id);
@@ -366,7 +389,11 @@ function patch(id){
   const mine=mineOf(id);
   k.vote.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(mine===+b.dataset.v)));
   const tt=totals(id); k.tally.textContent="";
-  const tot=el("span","total",String(tt.t)); tot.title="Group points: Must 3, I want 2, Meh 1, Nah 0"; k.tally.append(tot,el("span","pts",tt.t===1?"Point":"Points"),el("span","nvoted",tt.n+"/"+TRAVELERS.length+" Voted"));
+  // Colored by the average vote (all MUSTs = MUST green, all NAHs = NAH red); uncolored until someone votes.
+  const tot=el("span","total"+(tt.n?" grad":""),String(tt.t));
+  tot.title="Group points: Must 3, I want 2, Meh 1, Nah 0"+(tt.n?" · average "+(tt.t/tt.n).toFixed(1):"");
+  if(tt.n) tot.style.setProperty("--t",(tt.t/tt.n/3).toFixed(3));
+  k.tally.append(tot,el("span","pts",tt.t===1?"Point":"Points"),el("span","nvoted",tt.n+"/"+TRAVELERS.length+" Voted"));
   const dots=el("span","dots");
   TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][id]; const d=el("span","dot"+(typeof v==="number"?" v"+v:""),p[0]); d.title=p+": "+(typeof v==="number"?VLABEL[v]:"not voted yet"); dots.appendChild(d)});
   k.tally.appendChild(dots);
@@ -402,8 +429,20 @@ function renderBoard(){
   if(!planned) B.appendChild(el("p","board-note","Once places get a dedicated slot on the itinerary, this shows how many of each person's picks made it. Every place stays on as an alternative."));
 }
 function refresh(){ Object.keys(cards).forEach(patch); refreshBar() }
+// Each Tabelog score's place within its own region, best first: a thinly reviewed area scores lower across the board
+// than a big city, so the color compares like with like. t runs 0 (the region's lowest) to 1 (its best); ties share.
+let GRADE={};
+function grade(){
+  GRADE={};
+  REGIONS.forEach(r=>{
+    const xs=ITEMS.filter(i=>i.r===r&&/^\d\.\d+$/.test(i.score||"")), s=xs.map(i=>+i.score).sort((a,b)=>a-b), n=s.length;
+    xs.forEach(i=>{ const v=+i.score, lo=s.indexOf(v), hi=s.lastIndexOf(v);
+      GRADE[i.id]={t:n>1?(lo+hi)/2/(n-1):.5, rank:n-hi, n} });
+  });
+}
 function render(){
   const L=$("#list"); if(!L) return;
+  grade();
   Object.keys(cards).forEach(id=>{ if(io) io.unobserve(cards[id].ph); delete cards[id] });
   L.textContent="";
   if(!me) L.appendChild(el("p","callout","Pick your name in the bar above to start voting. Everyone's votes show on each card."));
@@ -461,7 +500,7 @@ function mountBallot(){
       const s=document.getElementById("region-"+slug(g)); if(s) s.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) };
     jump.appendChild(a) });
   const F=$("#filters"), has={slotted:ITEMS.some(i=>i.slot), casual:ITEMS.some(i=>i.tier==="casual"), splurge:ITEMS.some(i=>i.tier==="splurge"), izakaya:ITEMS.some(i=>i.izakaya), treats:ITEMS.some(i=>i.kind==="sweets"||i.kind==="drinks")};
-  FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip",label); b.type="button"; b.dataset.f=f; F.appendChild(b) });
+  FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip"); b.innerHTML=icon(FILTER_ICON[f]); b.appendChild(document.createTextNode(label)); b.type="button"; b.dataset.f=f; F.appendChild(b) });
   F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; syncTools(); render() });
   $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render() });
   $("#lock").addEventListener("click",()=>{ ls("code",null); ls("me",null); location.reload() });
