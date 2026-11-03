@@ -7,7 +7,10 @@
 const CFG=Object.assign({apiUrl:""},window.GROUP_VOTE||{});
 const TRIP_ID=String((window.TRIP&&window.TRIP.id)||"");
 let TRIP={}, TRAVELERS=[], ITEMS=[], REGIONS=[];   // filled in from the server once the password checks out
-const VLABEL={3:"Must",2:"Keen",1:"Maybe",0:"Skip"};
+const VLABEL={3:"Must",2:"I want",1:"Meh",0:"Nah"};   // shown in capitals; 3/2/1/0 points
+const GROUPS=[["specialty","Regional specialties"],["favorite","Local favorites"]];
+const TIER={casual:"Casual",mid:"Mid-range",splurge:"Splurge"};
+const FILTERS=[["all","All"],["slotted","On the itinerary"],["casual","Casual"],["splurge","Splurge"],["treats","Sweets & drinks"],["todo","To rate"]];
 const BOWL=(broth,top)=>`<ellipse cx="50" cy="52" rx="38" ry="12" fill="${broth}"/>${top}<path d="M12 52 Q14 84 50 86 Q86 84 88 52 Z" fill="#f4efe6" stroke="#c9bfae" stroke-width="1.5"/><path d="M20 70 Q50 78 80 70" stroke="#b23a2e" stroke-width="2.5" fill="none"/>`;
 const NOODLE=c=>`<path d="M22 50 q6-5 12 0 t12 0 t12 0 t12 0 t10 0" stroke="${c}" stroke-width="2.2" fill="none"/><path d="M24 55 q6-5 12 0 t12 0 t12 0 t12 0" stroke="${c}" stroke-width="2.2" fill="none"/>`;
 const ART={
@@ -46,11 +49,13 @@ function ls(k,v){try{if(v===undefined) return localStorage.getItem(K(k)); if(v==
 const REDUCED=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 let me=null, code=ls("code")||"";
-let sortMode="region", ballots={}, pending=Promise.resolve(), saving=0, unsent=false, loading=false;
-const photos={};
+let sortMode=ls("sort")==="rank"?"rank":"region", filter="all";
+let ballots={}, pending=Promise.resolve(), saving=0, unsent=false, loading=false;
+const photos={}, cards={};   // photos: per item, Google's photo list and what this page has fetched; cards: per item, its card
 const status=t=>{const s=$("#status"); if(s) s.textContent=t};
-const voted=()=>Object.keys(ballots).filter(n=>Object.keys(ballots[n]||{}).length).length+" of "+TRAVELERS.length+" have voted";
 const tripPath="/trips/"+encodeURIComponent(TRIP_ID);
+let toastTimer=0;
+function toast(t){ const e=$("#toast"); if(!e) return; e.textContent=t; e.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>e.classList.remove("show"),2600) }
 
 // ---------- Vote server ----------
 // Lambda answers 429 "Rate Exceeded" (not our JSON) when its concurrency cap of 5 is busy, e.g. several people opening
@@ -78,7 +83,7 @@ function lockOut(msg){
 // ---------- Votes ----------
 // Refreshes every 30 seconds and when the tab comes back. The server's copy wins, except my own ballot while a save of
 // it is in flight or waiting to be resent: so a vote I just cast doesn't flicker back, and votes I cast on another
-// device show up here.
+// device show up here. Cards update in place, so photo strips keep their place.
 async function loadVotes(){
   if(loading) return; loading=true;
   try{
@@ -88,8 +93,7 @@ async function loadVotes(){
     const mine=(me&&(saving||unsent))?ballots[me]:null, before=JSON.stringify(ballots);
     ballots=j.ballots||{};
     if(mine) ballots[me]=mine;
-    status(voted());
-    if(JSON.stringify(ballots)!==before) render();
+    if(JSON.stringify(ballots)!==before) refresh(); else status("");
     if(unsent){ unsent=false; saveVote() }
   } finally { loading=false }
 }
@@ -97,18 +101,25 @@ function saveVote(){
   const who=me; if(!who) return;
   saving++;
   pending=pending.then(()=>post(tripPath+"/ballots",{code,name:who,votes:ballots[who]||{}})).then(j=>{
-    if(j&&j.ok){ ballots=Object.assign({},j.ballots,{[who]:ballots[who]}); status(voted()); render() }
-    else if(!j){ unsent=true; status("Vote not saved yet. Retrying shortly.") }
+    if(j&&j.ok){ ballots=Object.assign({},j.ballots,{[who]:ballots[who]}); refresh() }
+    else if(!j){ unsent=true; status("Vote not saved yet. Retrying shortly."); toast("Vote not saved yet. Retrying shortly.") }
     else if(j.error==="code") lockOut(CHANGED);
-    else status("Couldn't save that vote") }).catch(()=>{}).finally(()=>{ saving-- });
+    else { status("Couldn't save that vote"); toast("Couldn't save that vote") } }).catch(()=>{}).finally(()=>{ saving-- });
 }
 
 // ---------- Photos (Google Maps Places API) ----------
-// Google calls are counted against the server's monthly budget. A text search is reserved just before it runs, and a
-// photo only once the search has found one, so a failed or empty search never spends photo budget. Lookups go one at
-// a time until one works, then three at once, and stop for this page view if Google fails before any success (or three
-// times running): a dead or misconfigured key then costs one search per view, not a search and a photo per item.
-let placesLib=null, budgetSpent=false, mapsDown=false, worked=0, failRun=0, active=0;
+// Each card has a photo strip, like a Google Maps place card. Google calls are counted against the server's monthly
+// budget: a place lookup is reserved just before it runs (as its card nears the screen), and each photo just before it
+// is fetched (the first at once, the rest as they're swiped to), so a failed lookup never spends photo budget. Lookups
+// go one at a time until one works, then three at once. They stop for this page view if Google fails before any
+// success (or three times running), and photos stop if Google refuses them (its daily cap, say): a dead key or a
+// spent quota then costs one lookup or one photo per view, and the Google Maps buttons still show everything.
+// An item with a placeId is looked up by id, so it's always the same place; otherwise by its q search. Its "photos" are
+// positions in the place's photo list (Google gives up to 10, with no food label, so they're picked by eye), best first.
+// Without them: positions 1, 2, 3, then 0, because Google's first photo is usually the storefront.
+const PHOTO_PX=960;   // one size for strip and full screen, so each photo is fetched (and counted) once per page view
+const DEFAULT_PICKS=[1,2,3,0];
+let placesLib=null, budgetSpent=false, mapsDown=false, photosDown=false, worked=0, failRun=0, active=0, shownOk=0, badRun=0;
 const queue=[], tried={};
 window.gm_authFailure=()=>{ mapsDown=true };
 function loadMaps(key){   // the key comes with the trip, after the password
@@ -120,125 +131,310 @@ function loadMaps(key){   // the key comes with the trip, after the password
     s.async=true; s.onerror=()=>rej(new Error("maps load failed")); document.head.appendChild(s);
   });
 }
-const io=("IntersectionObserver" in window)?new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ io.unobserve(e.target); wantPhoto(e.target.dataset.id) } }),{rootMargin:"400px"}):null;
+const io=("IntersectionObserver" in window)?new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ io.unobserve(e.target); wantPhoto(e.target.dataset.id) } }),{rootMargin:"500px"}):null;
 const byId=id=>ITEMS.find(i=>i.id===id);
+// The place on Google Maps, with every photo and review: exact when its id is known, else a search. No API call, so the
+// link works with photos off or the budget spent.
+function mapsLink(it){
+  const u="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(it.q||it.place||"");
+  return it.placeId?u+"&query_place_id="+encodeURIComponent(it.placeId):u;
+}
+// "Google Maps" as Google's attribution rules want it: exactly that text, never translated.
+const gm=()=>{ const t=el("span",null,"Google Maps"); t.setAttribute("translate","no"); return t };
+function banner(t){ const b=$("#setupBanner"); if(b){ b.hidden=false; b.textContent=t } }
 // Only the server's own "limit" answer means the budget is spent; a throttle or network error is just a failed try.
 async function reserve(kind){
   if(budgetSpent) return false;
   const j=await post("/usage",{trip:TRIP_ID,code,kinds:[kind]});
   if(j&&j.ok) return true;
   if(j&&j.error==="code") lockOut(CHANGED);
-  else if(j&&j.error==="limit"&&!budgetSpent){ budgetSpent=true; const b=$("#setupBanner"); b.hidden=false; b.textContent="This month's photo budget is used up, so items show illustrations until next month." }
+  else if(j&&j.error==="limit"&&!budgetSpent){ budgetSpent=true; banner("This month's photo budget is used up, so places show illustrations until next month. Each Google Maps button still has every photo.") }
   return false;
 }
+function photosOff(){ if(photosDown) return; photosDown=true; banner("Google isn't sending photos right now, so places show illustrations. Each Google Maps button still has every photo.") }
 function wantPhoto(id){ if(tried[id]) return; tried[id]=true; queue.push(id); pumpPhotos() }
 function pumpPhotos(){
-  while(placesLib&&!mapsDown&&!budgetSpent&&queue.length&&active<(worked?3:1)){
+  while(placesLib&&!mapsDown&&!photosDown&&!budgetSpent&&queue.length&&active<(worked?3:1)){
     const id=queue.shift(); active++;
     lookUp(id).catch(()=>{}).finally(()=>{ active--; pumpPhotos() });
   }
 }
 async function lookUp(id){
-  const it=byId(id); if(!it||!it.q) return;
+  const it=byId(id); if(!it||!(it.placeId||it.q)) return;
   if(!(await reserve("search"))){ delete tried[id]; return }   // no go-ahead: a later render can try again
-  let p;
-  try{ const r=await placesLib.Place.searchByText({textQuery:it.q, fields:["displayName","photos","googleMapsURI"], maxResultCount:1, language:"en", region:TRIP.region||"us"}); p=r.places&&r.places[0]; worked++; failRun=0 }
-  catch(e){ if(!worked||++failRun>=3) mapsDown=true; return }
-  const ph=p&&p.photos&&p.photos[0];
-  if(!ph) return;   // nothing to show: the illustration stays
-  if(!(await reserve("photo"))){ delete tried[id]; return }
-  const a=(ph.authorAttributions||[])[0]||{};
-  photos[id]={url:ph.getURI({maxWidth:400,maxHeight:400}), credit:a.displayName||"Google Maps user", creditUrl:a.uri||"", mapsUrl:p.googleMapsURI||""};
-  paintPhoto(id);
+  let list;
+  try{
+    if(it.placeId){ const pl=new placesLib.Place({id:it.placeId, requestedLanguage:"en"}); await pl.fetchFields({fields:["photos"]}); list=pl.photos }
+    else { const r=await placesLib.Place.searchByText({textQuery:it.q, fields:["id","photos"], maxResultCount:1, language:"en", region:TRIP.region||"us"});
+      const p=r.places&&r.places[0]; if(p){ list=p.photos; it.placeId=p.id; document.querySelectorAll('.gmaps[data-id="'+id+'"]').forEach(a=>{ a.href=mapsLink(it) }) } }
+    worked++; failRun=0;
+  }catch(e){ if(!worked||++failRun>=3) mapsDown=true; return }
+  list=list||[];
+  const picks=(Array.isArray(it.photos)&&it.photos.length?it.photos:DEFAULT_PICKS).filter(k=>Number.isInteger(k)&&k>=0&&k<list.length);
+  if(!picks.length) return;   // nothing to show: the illustration stays
+  photos[id]={list,picks,shots:{},wait:{}};
+  if(cards[id]) buildStrip(id);
 }
-// Paints every tile on the page for this item (after a lookup), or the one tile row() is building: that tile isn't in
-// the document yet, so a document query would miss it and every re-render would drop the photos.
-function paintPhoto(id,tile){
-  const ph=photos[id]; if(!ph) return;
-  (tile?[tile]:document.querySelectorAll('.pic[data-id="'+id+'"]')).forEach(pic=>{
-    if(pic.querySelector("img")) return;
-    // Keep the default referrer: the photo URL carries the key, which Google only honors from corgi-capital.com.
-    // The illustration stays until the photo has loaded (at once when it's cached), and for good if it fails.
-    const img=el("img"); img.alt="";
-    const show=()=>{ if(pic.querySelector("img")) return; pic.textContent=""; pic.appendChild(img); credit(pic,ph) };
-    img.onerror=()=>{ photos[id]=null };
-    if(ph.loaded){ img.src=ph.url; show() }
-    else { img.onload=()=>{ ph.loaded=true; show() }; img.src=ph.url }
-  });
+function shot(ph,size){ const a=(ph.authorAttributions||[])[0]||{}; return {url:ph.getURI({maxWidth:size,maxHeight:size}), credit:a.displayName||"Google Maps user", creditUrl:a.uri||"", avatar:a.photoURI||""} }
+// The photo at position p: reserved, and its URL made, the first time this page asks for it.
+function ensureShot(ph,p){
+  if(ph.shots[p]) return Promise.resolve(ph.shots[p]);
+  if(photosDown||budgetSpent) return Promise.resolve(null);
+  if(!ph.wait[p]) ph.wait[p]=reserve("photo").then(ok=>{ ph.wait[p]=null; if(ok&&!photosDown) ph.shots[p]=shot(ph.list[p],PHOTO_PX); return ph.shots[p]||null });
+  return ph.wait[p];
 }
-function credit(pic,ph){
-  const cr=pic.parentElement.querySelector(".credit");
-  if(!cr||cr.childNodes.length) return;
-  cr.appendChild(document.createTextNode("Photo: ")); const a=el("a",null,ph.credit); a.href=ph.creditUrl||ph.mapsUrl||"#"; a.target="_blank"; a.rel="noopener"; cr.appendChild(a);
-  if(ph.mapsUrl){ cr.appendChild(document.createTextNode(" · ")); const m=el("a",null,"Google Maps"); m.href=ph.mapsUrl; m.target="_blank"; m.rel="noopener"; cr.appendChild(m) }
+// Loads photo position p into an <img>. Keeps the default referrer: the photo URL carries the key, which Google only
+// honors from corgi-capital.com.
+async function fill(ph,p,img,done){
+  const s=await ensureShot(ph,p);
+  if(!s||!img.isConnected||img.dataset.p===String(p)) return;
+  img.dataset.p=p;
+  img.onload=()=>{ shownOk++; badRun=0; done(s) };
+  img.onerror=()=>{ delete img.dataset.p; if(!shownOk||++badRun>=3) photosOff() };
+  img.src=s.url;
+}
+// A card's photo strip: swipe it (or use the arrows), tap a photo for full screen. The illustration shows until the
+// first photo has loaded, and for good if none does. No photographer credit here: Google allows leaving it off
+// gallery-size photos when the full-size view shows it, which the viewer does.
+function buildStrip(id){
+  const k=cards[id], ph=photos[id]; if(!k||!ph||k.track) return;
+  const it=byId(id)||{}, n=ph.picks.length, box=k.ph;
+  const track=el("div","ph-track"); track.tabIndex=0;
+  track.setAttribute("aria-label","Photos of "+it.dish+(n>1?", "+n+" photos; arrow keys move":"")+"; Enter opens full screen");
+  const slides=ph.picks.map((p,i)=>{ const s=el("div","ph-slide"); s.dataset.i=i; const img=el("img"); img.alt=i?"":(it.dish||""); img.draggable=false; s.appendChild(img); track.appendChild(s); return s });
+  box.appendChild(track);
+  k.track=track; k.cur=0;
+  const dots=el("div","ph-dots"); let prev=null, next=null;
+  const load=i=>fill(ph,ph.picks[i],slides[i].firstChild,()=>{ slides[i].classList.add("on"); box.classList.add("has-photo") });
+  const at=i=>{ k.cur=i; [...dots.children].forEach((d,j)=>d.classList.toggle("on",j===i));
+    if(prev){ prev.hidden=i===0; next.hidden=i===n-1 } load(i) };
+  k.go=i=>track.scrollTo({left:Math.max(0,Math.min(n-1,i))*track.clientWidth,behavior:REDUCED?"auto":"smooth"});
+  if(n>1){
+    slides.forEach(()=>dots.appendChild(el("i")));
+    prev=el("button","ph-nav prev","‹"); next=el("button","ph-nav next","›"); prev.type=next.type="button"; prev.tabIndex=next.tabIndex=-1;
+    prev.setAttribute("aria-label","Previous photo"); next.setAttribute("aria-label","Next photo");
+    prev.onclick=()=>k.go(k.cur-1); next.onclick=()=>k.go(k.cur+1);
+    box.append(prev,next,dots);
+  }
+  const seen=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting) at(+e.target.dataset.i) }),{root:track,threshold:.6});
+  slides.forEach(s=>seen.observe(s));
+  track.addEventListener("click",()=>{ if(slides[k.cur].classList.contains("on")) openViewer(id,k.cur) });
+  track.addEventListener("keydown",e=>{
+    if(e.key==="ArrowRight"){ e.preventDefault(); k.go(k.cur+1) }
+    else if(e.key==="ArrowLeft"){ e.preventDefault(); k.go(k.cur-1) }
+    else if(e.key==="Enter"&&slides[k.cur].classList.contains("on")){ e.preventDefault(); openViewer(id,k.cur) } });
+  at(0);
 }
 
-// ---------- Render ----------
+// ---------- Full-screen viewer ----------
+// The item's photos large, starting at the one tapped: swipe, arrow keys or the buttons. Same photo URLs as the strip,
+// so nothing is fetched or counted twice. Links to every photo on Google Maps.
+function openViewer(id,start){
+  const it=byId(id), ph=photos[id]; if(!it||!ph||document.querySelector(".lb")) return;
+  const n=ph.picks.length;
+  const lb=el("div","lb"); lb.setAttribute("role","dialog"); lb.setAttribute("aria-modal","true"); lb.setAttribute("aria-label","Photos of "+it.dish);
+  const bar=el("div","lb-bar"), title=el("div","lb-title");
+  title.appendChild(el("b",null,it.dish)); title.appendChild(document.createTextNode(" · "+it.place));
+  const all=el("a","lb-all"); all.append("All photos on "); all.appendChild(gm()); all.href=mapsLink(it); all.target="_blank"; all.rel="noopener";
+  const x=el("button","lb-x","✕"); x.type="button"; x.setAttribute("aria-label","Close");
+  bar.append(title,all,x);
+  const track=el("div","lb-track");
+  const slides=ph.picks.map((p,i)=>{ const s=el("figure","lb-slide"); s.dataset.i=i;
+    s.innerHTML='<div class="lb-img"><span class="lb-wait">Loading…</span><img alt=""></div><figcaption class="lb-credit"></figcaption>'; track.appendChild(s); return s });
+  const nav=el("div","lb-nav"), prev=el("button","lb-prev","‹"), count=el("span","lb-count"), next=el("button","lb-next","›");
+  prev.type=next.type="button"; prev.setAttribute("aria-label","Previous photo"); next.setAttribute("aria-label","Next photo");
+  nav.append(prev,count,next); nav.hidden=n<2;
+  lb.append(bar,track,nav); document.body.appendChild(lb); document.body.classList.add("lb-open");
+  let cur=Math.max(0,Math.min(n-1,start|0));
+  const go=i=>track.scrollTo({left:Math.max(0,Math.min(n-1,i))*track.clientWidth,behavior:REDUCED?"auto":"smooth"});
+  const show=i=>{ const s=slides[i], img=s.querySelector("img"), wait=s.querySelector(".lb-wait");
+    if(!ph.shots[ph.picks[i]]&&(photosDown||budgetSpent)) wait.textContent=budgetSpent?"This month's photo budget is used up.":"Google isn't sending photos right now.";
+    fill(ph,ph.picks[i],img,b=>{ s.classList.add("on"); wait.remove(); const cr=s.querySelector(".lb-credit");
+      if(!cr.firstChild){ const a=el("a",null,b.credit); a.href=b.creditUrl||mapsLink(it); a.target="_blank"; a.rel="noopener";
+        if(b.avatar){ const av=el("img","av"); av.alt=""; av.src=b.avatar; av.referrerPolicy="no-referrer"; a.prepend(av) } cr.appendChild(a) } }) };
+  const at=i=>{ cur=i; count.textContent=(i+1)+" / "+n; prev.disabled=i===0; next.disabled=i===n-1; show(i) };
+  track.scrollLeft=cur*track.clientWidth;
+  const seen=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting) at(+e.target.dataset.i) }),{root:track,threshold:.6});
+  slides.forEach(s=>seen.observe(s));
+  at(cur);
+  function close(){
+    seen.disconnect(); lb.remove(); document.body.classList.remove("lb-open"); removeEventListener("keydown",key,true);
+    const k=cards[id]; if(k&&k.track){ k.track.scrollLeft=cur*k.track.clientWidth; k.track.focus({preventScroll:true}) }
+  }
+  function key(e){
+    if(e.key==="Escape"){ e.preventDefault(); close() }
+    else if(e.key==="ArrowRight"){ e.preventDefault(); go(cur+1) }
+    else if(e.key==="ArrowLeft"){ e.preventDefault(); go(cur-1) }
+    else if(e.key==="Tab"){   // keep focus inside the viewer
+      const f=[...lb.querySelectorAll("a[href],button:not([disabled])")].filter(z=>z.offsetParent), j=f.indexOf(document.activeElement);
+      if(e.shiftKey&&j<=0){ e.preventDefault(); f[f.length-1].focus() } else if(!e.shiftKey&&j===f.length-1){ e.preventDefault(); f[0].focus() } }
+  }
+  addEventListener("keydown",key,true);
+  x.onclick=close; prev.onclick=()=>go(cur-1); next.onclick=()=>go(cur+1);
+  track.addEventListener("click",e=>{ if(!e.target.closest("img,a")) close() });   // a tap beside the photo closes
+  x.focus();
+}
+
+// ---------- Ballot ----------
+const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-");
+function totals(id){let t=0,n=0; TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][id]; if(typeof v==="number"){t+=v;n++}}); return {t,n}}
+const mineOf=id=>me&&ballots[me]?ballots[me][id]:undefined;
+function visibleItems(){
+  if(filter==="casual") return ITEMS.filter(i=>i.tier==="casual");
+  if(filter==="splurge") return ITEMS.filter(i=>i.tier==="splurge");
+  if(filter==="treats") return ITEMS.filter(i=>i.kind==="sweets"||i.kind==="drinks");
+  if(filter==="todo") return ITEMS.filter(i=>typeof mineOf(i.id)!=="number");
+  if(filter==="slotted") return ITEMS.filter(i=>i.slot);
+  return ITEMS;
+}
 function renderWho(){
   const w=$("#who"); w.textContent="";
-  TRAVELERS.forEach(n=>{const b=el("button","chip",n); b.id="who-"+n; b.setAttribute("aria-pressed",String(me===n));
-    b.onclick=()=>{ me=n; ls("me",n); renderWho(); render() }; w.appendChild(b)});
-  $("#dotsKey").textContent="Squares under each total: "+TRAVELERS.map(t=>t[0]).join(" · ");
+  TRAVELERS.forEach(n=>{const b=el("button","chip",n); b.type="button"; b.id="who-"+n; b.setAttribute("aria-pressed",String(me===n));
+    b.onclick=()=>{ me=n; ls("me",n); $("#whoWrap").classList.remove("nudge"); renderWho(); render() }; w.appendChild(b)});
 }
-function totals(id){let t=0,n=0; TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][id]; if(typeof v==="number"){t+=v;n++}}); return {t,n}}
-function row(it){
-  const r=el("div","row");
-  const pic=el("div","pic"); pic.dataset.id=it.id; pic.setAttribute("role","img"); pic.setAttribute("aria-label",it.dish);
-  pic.innerHTML='<svg viewBox="0 0 100 100" aria-hidden="true">'+(ART[it.art]||"")+'</svg>';
-  r.appendChild(pic);
-  const m=el("div","main");
-  m.appendChild(el("div","dish",it.dish));
-  const pl=el("div","place");
-  if(it.url){const a=el("a",null,it.place); a.href=it.url; a.target="_blank"; a.rel="noopener"; pl.appendChild(a)} else pl.textContent=it.place;
-  if(it.area) pl.appendChild(document.createTextNode(" · "+it.area)); m.appendChild(pl);
-  const meta=el("div","meta");
-  if(it.score) meta.appendChild(el("span","score", it.score==="n/a"?"Not on Tabelog":(TRIP.scoreLabel||"Rating")+" "+it.score));
-  if(it.badge) meta.appendChild(el("span","badge",it.badge));
-  m.appendChild(meta);
-  if(it.note) m.appendChild(el("div","note",it.note));
-  m.appendChild(el("div","credit",""));
-  r.appendChild(m);
-  const side=el("div","side");
-  const tt=totals(it.id);
-  const tot=el("div","total",String(tt.t)); tot.appendChild(el("small",null,tt.n+"/"+TRAVELERS.length+" voted")); side.appendChild(tot);
-  const dots=el("div","dots");
-  TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][it.id]; const d=el("span","dot"+(typeof v==="number"?" v"+v:""),p[0]); d.title=p+": "+(typeof v==="number"?VLABEL[v]:"not voted"); dots.appendChild(d)});
-  side.appendChild(dots); r.appendChild(side);
-  const vote=el("div","vote");
-  [3,2,1,0].forEach(v=>{const b=el("button",null,VLABEL[v]); b.dataset.v=v; b.id="v-"+it.id+"-"+v;
-    const mine=me&&ballots[me]?ballots[me][it.id]:undefined; b.setAttribute("aria-pressed",String(mine===v));
-    b.disabled=!me; b.onclick=()=>cast(it.id,v); vote.appendChild(b)});
-  r.appendChild(vote);
-  if(photos[it.id]) paintPhoto(it.id,pic); else if(!tried[it.id]){ if(io) io.observe(pic); else wantPhoto(it.id) }
-  return r;
+function card(it,rank){
+  const c=el("article","card"); c.dataset.id=it.id;
+  const ph=el("div","ph"); ph.dataset.id=it.id;
+  const art=el("div","ph-art"); art.innerHTML='<svg viewBox="0 0 100 100" aria-hidden="true">'+(ART[it.art]||"")+'</svg>'; ph.appendChild(art);
+  if(rank) ph.appendChild(el("span","ph-rank","#"+rank));
+  if(it.slot) ph.appendChild(el("span","ph-slot","On the itinerary"+(typeof it.slot==="string"?" · "+it.slot:"")));
+  c.appendChild(ph);
+  const b=el("div","cb");
+  b.appendChild(el("h3","dish",it.dish));
+  b.appendChild(el("div","place",it.place+(it.area?" · "+it.area:"")));
+  const tags=el("div","tags");
+  if(it.score) tags.appendChild(el("span","score", it.score==="n/a"?"Not on Tabelog":(TRIP.scoreLabel||"Rating")+" "+it.score));
+  if(it.badge) tags.appendChild(el("span","badge",it.badge));
+  if(TIER[it.tier]) tags.appendChild(el("span","tag",TIER[it.tier]));
+  if(it.kind==="sweets"||it.kind==="drinks") tags.appendChild(el("span","tag",it.kind==="sweets"?"Sweets":"Drinks"));
+  if(rank&&it.group==="specialty") tags.appendChild(el("span","tag spec","Regional specialty"));
+  b.appendChild(tags);
+  if(it.note) b.appendChild(el("p","note",it.note));
+  // Tabelog (or the place's own page) first, then Google Maps: whichever the place has.
+  const links=el("div","links");
+  if(it.url){ let h=""; try{ h=new URL(it.url).hostname }catch(e){}
+    const a=el("a","lnk",/(^|\.)tabelog\.com$/.test(h)?"Tabelog":/tablecheck\.com$/.test(h)?"Book on TableCheck":"Website");
+    a.href=it.url; a.target="_blank"; a.rel="noopener"; links.appendChild(a) }
+  if(it.placeId||it.q){ const g=el("a","lnk gmaps"); g.href=mapsLink(it); g.target="_blank"; g.rel="noopener"; g.dataset.id=it.id;
+    g.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
+    g.appendChild(gm()); g.setAttribute("aria-label",it.place+" on Google Maps: every photo and review"); links.appendChild(g) }
+  if(links.firstChild) b.appendChild(links);
+  const vote=el("div","vote"); vote.setAttribute("role","group"); vote.setAttribute("aria-label","Your vote: "+it.dish);
+  [3,2,1,0].forEach(v=>{const btn=el("button",null,VLABEL[v]); btn.type="button"; btn.dataset.v=v; btn.id="v-"+it.id+"-"+v; btn.onclick=()=>cast(it.id,v); vote.appendChild(btn)});
+  b.appendChild(vote);
+  const tally=el("div","tally"); b.appendChild(tally);
+  c.appendChild(b);
+  cards[it.id]={c,ph,vote,tally};
+  patch(it.id);
+  if(photos[it.id]) buildStrip(it.id); else if(!tried[it.id]){ if(io) io.observe(ph); else wantPhoto(it.id) }
+  return c;
 }
+// Updates one card's vote buttons and group tally without rebuilding it.
+function patch(id){
+  const k=cards[id]; if(!k) return;
+  const mine=mineOf(id);
+  k.vote.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(mine===+b.dataset.v)));
+  const tt=totals(id); k.tally.textContent="";
+  const tot=el("span","total",String(tt.t)); tot.title="Group points: Must 3, I want 2, Meh 1, Nah 0"; k.tally.append(tot,el("span","pts","pts"),el("span","nvoted",tt.n+"/"+TRAVELERS.length+" voted"));
+  const dots=el("span","dots");
+  TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][id]; const d=el("span","dot"+(typeof v==="number"?" v"+v:""),p[0]); d.title=p+": "+(typeof v==="number"?VLABEL[v]:"not voted yet"); dots.appendChild(d)});
+  k.tally.appendChild(dots);
+}
+function refreshBar(){
+  const n=ITEMS.filter(i=>typeof mineOf(i.id)==="number").length;
+  $("#mine").textContent=me?"You've rated "+n+" of "+ITEMS.length:"Pick your name to vote";
+  $("#progress").style.width=(me&&ITEMS.length?100*n/ITEMS.length:0)+"%";
+  status(""); renderBoard();
+}
+// The scoreboard: per person, how many of their MUSTs, I WANTs, MEHs and NAHs got a dedicated slot on the itinerary
+// ("slot" on an item in the trip file; every other place stays on as an alternative). Before any slot is set, it just
+// counts each person's votes.
+function renderBoard(){
+  const B=$("#board"); if(!B) return;
+  const planned=ITEMS.some(i=>i.slot);
+  B.textContent="";
+  const t=el("table","board-t"), hr=el("tr");
+  hr.appendChild(el("th",null,planned?"Made the itinerary":"Votes so far"));
+  [3,2,1,0].forEach(v=>hr.appendChild(el("th","c"+v,VLABEL[v])));
+  hr.appendChild(el("th",null,"Rated"));
+  t.appendChild(el("thead")).appendChild(hr);
+  const tb=t.appendChild(el("tbody"));
+  TRAVELERS.forEach(p=>{ const b=ballots[p]||{}, tr=el("tr",p===me?"me":null);
+    tr.appendChild(el("th",null,p));
+    [3,2,1,0].forEach(v=>{ const mine=ITEMS.filter(i=>b[i.id]===v), got=mine.filter(i=>i.slot).length;
+      const td=el("td",null,planned?got+"/"+mine.length:String(mine.length));
+      td.title=planned?got+" of "+p+"'s "+mine.length+" "+VLABEL[v]+" picks have a slot":p+" gave "+mine.length+" "+VLABEL[v];
+      tr.appendChild(td) });
+    tr.appendChild(el("td","rated",ITEMS.filter(i=>typeof b[i.id]==="number").length+"/"+ITEMS.length));
+    tb.appendChild(tr) });
+  B.appendChild(t);
+  if(!planned) B.appendChild(el("p","board-note","Once places get a dedicated slot on the itinerary, this shows how many of each person's picks made it. Every place stays on as an alternative."));
+}
+function refresh(){ Object.keys(cards).forEach(patch); refreshBar() }
 function render(){
-  const L=$("#list"); if(!L) return; L.textContent="";
-  if(!me) L.appendChild(el("p","empty","Pick your name above to start voting. Everyone's votes show here once they're in."));
-  if(sortMode==="region"){ REGIONS.forEach(g=>{L.appendChild(el("h2",null,g)); ITEMS.filter(i=>i.r===g).forEach(i=>L.appendChild(row(i)))}) }
-  else { L.appendChild(el("h2",null,"Group ranking")); ITEMS.slice().sort((a,b)=>totals(b.id).t-totals(a.id).t||totals(b.id).n-totals(a.id).n).forEach(i=>L.appendChild(row(i))) }
+  const L=$("#list"); if(!L) return;
+  Object.keys(cards).forEach(id=>{ if(io) io.unobserve(cards[id].ph); delete cards[id] });
+  L.textContent="";
+  if(!me) L.appendChild(el("p","callout","Pick your name in the bar above to start voting. Everyone's votes show on each card."));
+  const xs=visibleItems();
+  if(!xs.length) L.appendChild(el("p","empty",filter==="todo"?"You've rated everything. Nice.":"Nothing here yet."));
+  else if(sortMode==="region"){
+    // Each region: what it's known for, then its regional specialties, then local favorites.
+    REGIONS.forEach(g=>{ const its=xs.filter(i=>i.r===g); if(!its.length) return;
+      const s=el("section","region"); s.id="region-"+slug(g);
+      const h=el("h2","sec",g); h.appendChild(el("small",null,its.length+(its.length===1?" spot":" spots"))); s.appendChild(h);
+      const known=(TRIP.knownFor||{})[g]; if(known&&known.length) s.appendChild(el("p","known","Known for "+known.join(", ")));
+      const parts=GROUPS.map(([k,label])=>[label,its.filter(i=>i.group===k)]);
+      parts.push(["More to try",its.filter(i=>!GROUPS.some(([k])=>k===i.group))]);
+      const used=parts.filter(([,v])=>v.length);
+      used.forEach(([label,v])=>{ if(used.length>1){ const sh=el("h3","sub",label); sh.appendChild(el("small",null,String(v.length))); s.appendChild(sh) }
+        const grid=el("div","grid"); v.forEach(i=>grid.appendChild(card(i))); s.appendChild(grid) });
+      L.appendChild(s) });
+  } else {
+    const grid=el("div","grid");
+    xs.slice().sort((a,b)=>totals(b.id).t-totals(a.id).t||totals(b.id).n-totals(a.id).n).forEach((i,n)=>grid.appendChild(card(i,n+1)));
+    L.appendChild(grid);
+  }
+  refreshBar();
 }
 function cast(id,v){
-  if(!me) return;
+  if(!me){ const w=$("#whoWrap"); w.classList.remove("nudge"); void w.offsetWidth; w.classList.add("nudge"); toast("Pick your name first"); return }
   const cur=Object.assign({},ballots[me]||{});
   if(cur[id]===v) delete cur[id]; else cur[id]=v;
-  ballots=Object.assign({},ballots,{[me]:cur}); render(); saveVote();
+  ballots=Object.assign({},ballots,{[me]:cur}); patch(id); refreshBar(); saveVote();
+}
+function syncTools(){
+  document.querySelectorAll("#sort button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.s===sortMode)));
+  document.querySelectorAll("#filters button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.f===filter)));
+  $("#jump").hidden=sortMode!=="region";
 }
 function mountBallot(){
   const v=el("div","gv-ballot");
-  v.innerHTML='<div class="wrap"><header><h1 id="title"></h1><p id="intro"></p><div class="banner" id="setupBanner" hidden></div></header></div>'
-    +'<div class="bar"><div class="bar-in"><span class="label">I am</span><div class="chips" id="who"></div><span class="label">Sort</span>'
-    +'<div class="tabs" id="sort"><button class="chip" data-s="region" aria-pressed="true">By region</button><button class="chip" data-s="rank" aria-pressed="false">Group ranking</button></div>'
-    +'<span class="status" id="status"></span></div></div>'
-    +'<div class="wrap" style="padding-block:4px 64px"><div class="legend">'
-    +[[3,"must"],[2,"keen"],[1,"maybe"],[0,"skip"]].map(([n,c])=>'<span><i class="sw" style="background:var(--'+c+')"></i>'+VLABEL[n]+' ('+n+')</span>').join("")
-    +'<span id="dotsKey"></span></div><div id="list"></div>'
-    +'<p class="gattr">Photos via Google Maps; each photo credits its contributor. <button type="button" class="lock" id="lock" title="Forget the password on this device">Lock this page</button></p></div>';
+  v.innerHTML='<header class="hd"><div class="hd-top"><a class="mark" href="/">Corgi Capital</a>'
+    +'<button type="button" class="lock" id="lock" title="Forget the password on this device">Lock</button></div>'
+    +'<h1 id="title"></h1><p id="intro"></p><nav class="jump" id="jump" aria-label="Jump to"></nav><section class="board" id="board" aria-label="Scoreboard"></section><div class="banner" id="setupBanner" hidden></div></header>'
+    +'<div class="bar"><div class="bar-in"><div class="who" id="whoWrap"><span class="label">I am</span><div class="chips" id="who"></div></div>'
+    +'<div class="counts"><span id="mine"></span><span class="status" id="status"></span></div></div>'
+    +'<div class="progress" aria-hidden="true"><i id="progress"></i></div></div>'
+    +'<div class="tools"><div class="seg" id="sort" role="group" aria-label="Sort"><button type="button" data-s="region">Region</button><button type="button" data-s="rank">Ranking</button></div>'
+    +'<div class="filters" id="filters" role="group" aria-label="Show"></div><span class="key"><i class="k3"></i>Must 3<i class="k2"></i>I want 2<i class="k1"></i>Meh 1<i class="k0"></i>Nah 0</span></div>'
+    +'<main class="list" id="list"></main>'
+    +'<footer class="ft"><p class="gattr">Photos and places from <span translate="no">Google Maps</span>; tap a photo to see who took it. Ratings from Tabelog.</p></footer>'
+    +'<div class="toast" id="toast" role="status" aria-live="polite"></div>';
   document.body.appendChild(v);
   document.title=TRIP.title||"Trip vote"; $("#title").textContent=TRIP.title||""; $("#intro").textContent=TRIP.intro||"";
-  $("#sort").addEventListener("click",e=>{const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s;
-    document.querySelectorAll("#sort button").forEach(x=>x.setAttribute("aria-pressed",String(x===b))); render()});
+  const jump=$("#jump");
+  REGIONS.forEach(g=>{ const n=ITEMS.filter(i=>i.r===g).length; if(!n) return;
+    const a=el("a",null,g); a.href="#region-"+slug(g); a.appendChild(el("small",null,String(n)));
+    a.onclick=e=>{ e.preventDefault(); if(filter!=="all"){ filter="all"; syncTools(); render() }
+      const s=document.getElementById("region-"+slug(g)); if(s) s.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) };
+    jump.appendChild(a) });
+  const F=$("#filters"), has={slotted:ITEMS.some(i=>i.slot), casual:ITEMS.some(i=>i.tier==="casual"), splurge:ITEMS.some(i=>i.tier==="splurge"), treats:ITEMS.some(i=>i.kind==="sweets"||i.kind==="drinks")};
+  FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip",label); b.type="button"; b.dataset.f=f; F.appendChild(b) });
+  F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; syncTools(); render() });
+  $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render() });
   $("#lock").addEventListener("click",()=>{ ls("code",null); ls("me",null); location.reload() });
+  syncTools();
 }
 
 // ---------- Password gate ----------
@@ -304,7 +500,7 @@ function boot(){
     ballots=j.ballots||{};
     const swap=()=>{
       stopField(); gate.remove(); document.body.classList.remove("gv-locked"); window.scrollTo(0,0);
-      mountBallot(); renderWho(); status(voted()); render();
+      mountBallot(); renderWho(); render();
       loadMaps(j.mapsApiKey).then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; pumpPhotos() }).catch(()=>{});
       setInterval(()=>{ if(document.visibilityState==="visible") loadVotes() },30000);
       document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") loadVotes() });

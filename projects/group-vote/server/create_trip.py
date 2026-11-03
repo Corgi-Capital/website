@@ -40,8 +40,21 @@ def check_page(page):
     bad = [i for i in ids if not isinstance(i, str) or not ITEM_RE.match(i)]
     dupes = sorted({i for i in ids if ids.count(i) > 1})
     lost = sorted({str(i.get("r")) for i in items} - set(page.get("regions") or []))
-    if bad or dupes or lost:
-        raise SystemExit(f"bad item ids: {bad}; duplicate item ids: {dupes}; regions missing from 'regions': {lost}")
+    # placeId: a Google place id. photos: positions 0-9 in that place's Google photo list, best first.
+    bad_place = [i.get("id") for i in items if "placeId" in i and not (isinstance(i["placeId"], str) and re.match(r"^[A-Za-z0-9_-]{8,}$", i["placeId"]))]
+    bad_photos = [i.get("id") for i in items if "photos" in i and not (isinstance(i["photos"], list) and
+                  all(isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 9 for n in i["photos"]))]
+    # Optional labels the page sorts and filters on, and slot: a dedicated itinerary slot (true or e.g. "Fri dinner").
+    allowed = {"kind": {"meal", "sweets", "drinks"}, "tier": {"casual", "mid", "splurge"}, "group": {"specialty", "favorite"}}
+    bad_labels = [f"{i.get('id')}.{k}" for i in items for k, ok in allowed.items() if k in i and i[k] not in ok]
+    bad_slot = [i.get("id") for i in items if "slot" in i and not (isinstance(i["slot"], bool) or (isinstance(i["slot"], str) and 0 < len(i["slot"]) <= 40))]
+    known = page.get("knownFor", {})
+    bad_known = not isinstance(known, dict) or any(not isinstance(v, list) or not all(isinstance(x, str) for x in v) for v in known.values())
+    if bad or dupes or lost or bad_place or bad_photos or bad_labels or bad_slot or bad_known:
+        raise SystemExit(f"bad item ids: {bad}; duplicate item ids: {dupes}; regions missing from 'regions': {lost}; "
+                         f"bad placeId: {bad_place}; bad photos (positions 0-9): {bad_photos}; bad labels: {bad_labels} "
+                         f"(allowed: {allowed}); bad slot (true or a label up to 40 characters): {bad_slot}; "
+                         f"knownFor must map regions to lists of text: {'bad' if bad_known else 'ok'}")
 
 
 p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
