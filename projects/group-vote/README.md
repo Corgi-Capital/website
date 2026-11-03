@@ -8,20 +8,29 @@ Reusable ballot for group trip planning: each traveler marks items Must / Keen /
 
 ## One-time setup
 
-**1. Vote server (AWS)**
+**1. Store the Google Maps key in Secrets Manager**
+
+```bash
+aws secretsmanager create-secret --region us-east-1 --name group-vote/maps-api-key --secret-string "<browser key>"
+# to rotate later: aws secretsmanager put-secret-value --region us-east-1 --secret-id group-vote/maps-api-key --secret-string "<new key>"
+```
+
+The key is a browser key: it still reaches every visitor's browser (via the server's `/config` route). Keeping it in Secrets Manager keeps it out of the public repo and lets you rotate it without a commit. Its real protection is the referrer restriction to `https://corgi-capital.com/*`. Cost: $0.40 a month for the secret.
+
+**2. Vote server (AWS)**
 
 ```bash
 cd projects/group-vote/server
-sam build && sam deploy --guided   # stack name: group-vote; accept defaults
+sam build && sam deploy --guided   # stack name: group-vote, region us-east-1; answer y to the IAM and "no authentication" prompts
 ```
 
 Copy the `VoteApiUrl` output into `web/group-vote-config.js` as `apiUrl`. Note the `TableName` output.
 
 Cost: DynamoDB on-demand plus Lambda; a few trips' worth of votes stays inside the AWS free tier. Concurrency is capped at 5.
 
-**2. Google Maps key (photos)**
+**3. Google Maps key**
 
-Create a key with Maps JavaScript API and Places API (New), restricted to `https://corgi-capital.com/*`. Paste it into `web/group-vote-config.js` as `mapsApiKey`.
+Create a key with Maps JavaScript API, Places API (New), Routes API and Geocoding API, restricted to `https://corgi-capital.com/*`, and put it in the secret from step 1.
 
 ## Each new trip
 

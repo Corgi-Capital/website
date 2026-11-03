@@ -1,6 +1,7 @@
 """Group Vote API: one Lambda behind a function URL, one DynamoDB table.
 
 Routes
+  GET  /config                         -> {"ok": true, "mapsApiKey": "..."} (browser key, read from Secrets Manager)
   GET  /trips/{trip}?code=...          -> {"ok": true, "ballots": {name: {item_id: 0-3}}}
   POST /trips/{trip}/ballots           body {"code", "name", "votes"} -> same as GET
 
@@ -19,6 +20,8 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 TABLE = boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])
+SECRETS = boto3.client("secretsmanager")
+_maps_key = {"value": None, "at": 0}
 TRIP_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 ITEM_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 MAX_ITEMS = 300
@@ -50,9 +53,22 @@ def _ballots(trip):
         kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
 
 
+def _get_maps_key():
+    # Cached for an hour so a rotated key takes effect without a redeploy.
+    if _maps_key["value"] is None or time.time() - _maps_key["at"] > 3600:
+        _maps_key["value"] = SECRETS.get_secret_value(SecretId=os.environ["MAPS_SECRET_ID"])["SecretString"].strip()
+        _maps_key["at"] = time.time()
+    return _maps_key["value"]
+
+
 def handler(event, _context):
     method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
     parts = [p for p in event.get("rawPath", "/").split("/") if p]
+    if method == "GET" and parts == ["config"]:
+        try:
+            return _resp(200, {"ok": True, "mapsApiKey": _get_maps_key()})
+        except Exception:  # missing secret or permissions: page falls back to illustrations
+            return _resp(503, {"ok": False, "error": "config"})
     if len(parts) < 2 or parts[0] != "trips" or not TRIP_RE.match(parts[1]):
         return _resp(404, {"ok": False, "error": "not_found"})
     trip = parts[1]

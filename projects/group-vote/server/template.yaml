@@ -6,6 +6,10 @@ Parameters:
   AllowedOrigin:
     Type: String
     Default: https://corgi-capital.com
+  MapsKeySecretName:
+    Type: String
+    Default: group-vote/maps-api-key
+    Description: Secrets Manager secret holding the Google Maps browser key as a plain string
 
 Resources:
   VotesTable:
@@ -33,8 +37,13 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref VotesTable
+          MAPS_SECRET_ID: !Ref MapsKeySecretName
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref VotesTable }
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${MapsKeySecretName}-*"
       FunctionUrlConfig:
         AuthType: NONE
         Cors:

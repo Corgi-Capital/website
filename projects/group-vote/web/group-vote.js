@@ -73,14 +73,19 @@ function saveVote(){
 
 // ---------- Photos (Google Maps Places API) ----------
 let placesLib=null;
+async function getMapsKey(){
+  if(CFG.mapsApiKey) return CFG.mapsApiKey;
+  if(!CFG.apiUrl) return "";
+  try{ const j=await (await fetch(CFG.apiUrl.replace(/\/$/,"")+"/config")).json(); return (j&&j.ok&&j.mapsApiKey)||"" }catch(e){ return "" }
+}
 function loadMaps(){
-  return new Promise((res,rej)=>{
+  return getMapsKey().then(key=>{ CFG.mapsApiKey=key; return new Promise((res,rej)=>{
     if(!CFG.mapsApiKey) return rej(new Error("no key"));
     window.__gvMapsReady=()=>res();
     const s=document.createElement("script");
     s.src="https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(CFG.mapsApiKey)+"&v=weekly&loading=async&callback=__gvMapsReady";
     s.async=true; s.onerror=()=>rej(new Error("maps load failed")); document.head.appendChild(s);
-  });
+  }) });
 }
 const io=("IntersectionObserver" in window)?new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ io.unobserve(e.target); fetchPhoto(e.target.dataset.id) } }),{rootMargin:"400px"}):null;
 const inflight={};
@@ -169,7 +174,7 @@ $("#codeForm").addEventListener("submit",e=>{e.preventDefault(); code=$("#codeIn
 renderWho();
 if(me&&!CFG.apiUrl){ try{ ballots[me]=JSON.parse(ls("local-"+me)||"{}") }catch(e){} }
 render();
-const missing=[]; if(!CFG.mapsApiKey) missing.push("a Google Maps API key (photos)"); if(!CFG.apiUrl) missing.push("the vote server URL (shared votes)");
+const missing=[]; if(!CFG.apiUrl) missing.push("the vote server (shared votes and photos)");
 if(missing.length){ const b=$("#setupBanner"); b.hidden=false; b.textContent="Setup pending: "+missing.join(" and ")+". Until then the page shows illustrations and keeps votes on this device." }
 loadVotes();
 loadMaps().then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; document.querySelectorAll(".pic[data-id]").forEach(p=>{ if(io){ io.unobserve(p); io.observe(p) } else fetchPhoto(p.dataset.id) }) }).catch(()=>{});
