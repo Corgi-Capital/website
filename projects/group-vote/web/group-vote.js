@@ -366,7 +366,7 @@ function patch(id){
   const mine=mineOf(id);
   k.vote.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(mine===+b.dataset.v)));
   const tt=totals(id); k.tally.textContent="";
-  const tot=el("span","total",String(tt.t)); tot.title="Group points: Must 3, I want 2, Meh 1, Nah 0"; k.tally.append(tot,el("span","pts","pts"),el("span","nvoted",tt.n+"/"+TRAVELERS.length+" voted"));
+  const tot=el("span","total",String(tt.t)); tot.title="Group points: Must 3, I want 2, Meh 1, Nah 0"; k.tally.append(tot,el("span","pts",tt.t===1?"Point":"Points"),el("span","nvoted",tt.n+"/"+TRAVELERS.length+" Voted"));
   const dots=el("span","dots");
   TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][id]; const d=el("span","dot"+(typeof v==="number"?" v"+v:""),p[0]); d.title=p+": "+(typeof v==="number"?VLABEL[v]:"not voted yet"); dots.appendChild(d)});
   k.tally.appendChild(dots);
