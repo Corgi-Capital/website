@@ -195,12 +195,11 @@ function openSuggest(){
   const d=el("div","sg"); d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","sgTitle");
   d.innerHTML='<form class="sg-card" novalidate><h2 id="sgTitle">Suggest a Spot</h2>'
     +'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Claude looks each one up, writes its card and adds it under Group Tastes (events under Events). It takes a minute or two, and everyone sees it.</p>'
-    +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;or a name and the town"></textarea>'
-    +'<label class="sg-l" for="sgWhy">Why <span>(optional)</span></label><input id="sgWhy" type="text" maxlength="200" placeholder="What makes it worth a stop?">'
+    +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;Or a name and the location"></textarea>'
     +'<p class="sg-msg" role="status" aria-live="polite"></p>'
     +'<div class="sg-row"><button type="button" class="sg-cancel">Cancel</button><button type="submit" class="sg-go">Suggest</button></div></form>';
   document.body.appendChild(d); document.body.classList.add("lb-open");
-  const f=d.querySelector("form"), ta=d.querySelector("#sgText"), why=d.querySelector("#sgWhy"), msg=d.querySelector(".sg-msg"), go=d.querySelector(".sg-go");
+  const f=d.querySelector("form"), ta=d.querySelector("#sgText"), msg=d.querySelector(".sg-msg"), go=d.querySelector(".sg-go");
   function close(){ d.remove(); document.body.classList.remove("lb-open"); removeEventListener("keydown",key,true); const b=$("#suggestBtn"); if(b) b.focus() }
   function key(e){
     if(e.key==="Escape"){ e.preventDefault(); close() }
@@ -216,7 +215,7 @@ function openSuggest(){
     if(!lines.length){ msg.textContent="Paste a link or type a name."; ta.focus(); return }
     if(lines.length>5){ msg.textContent="Up to 5 at a time, please."; ta.focus(); return }
     go.disabled=true; msg.textContent="Sending…";
-    const j=await post(tripPath+"/suggestions",{code,name:me,text:lines.join("\n"),why:why.value.trim()});
+    const j=await post(tripPath+"/suggestions",{code,name:me,text:lines.join("\n")});
     go.disabled=false;
     if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); toast(lines.length>1?"Claude is looking them up":"Claude is looking it up"); pace();
       const S=$("#sugs"); if(S&&S.getBoundingClientRect().top<0) S.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) }
