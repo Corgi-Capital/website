@@ -18,6 +18,17 @@ Parameters:
     Type: String
     Default: group-vote/maps-api-key
     Description: Secrets Manager secret holding the Google Maps browser key as a plain string
+  ClaudeSecretName:
+    Type: String
+    Default: group-vote/claude-oauth-token
+    Description: Secrets Manager secret holding a Claude Code OAuth token (claude setup-token) as a plain string; the agent runs on that Claude subscription
+  ClaudeCodeVersion:
+    Type: String
+    Default: 2.1.317
+  ClaudeCodeSha512:
+    Type: String
+    Default: sha512-awlwqIvbePCG9zVrlBm5L/3eELJmGJThom+1QgHeBK5N9F1dFpyBQP9M5A8s0PAaWBbLwDIm9SHVmZ6j/TftbA==
+    Description: npm dist.integrity of @anthropic-ai/claude-code-linux-arm64 at ClaudeCodeVersion (npm view ... dist.integrity)
 
 Resources:
   VotesTable:
@@ -48,8 +59,10 @@ Resources:
           MAPS_SECRET_ID: !Ref MapsKeySecretName
           PHOTO_MONTHLY_LIMIT: !Ref PhotoMonthlyLimit
           SEARCH_MONTHLY_LIMIT: !Ref SearchMonthlyLimit
+          AGENT_FUNCTION: !Ref AgentFunction
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref VotesTable }
+        - LambdaInvokePolicy: { FunctionName: !Ref AgentFunction }
         - Statement:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
@@ -61,6 +74,44 @@ Resources:
           AllowMethods: [GET, POST]
           AllowHeaders: [content-type]
           MaxAge: 3600
+
+  # Suggest Spot: reviews each suggestion with Claude Code (headless, on the Claude subscription in ClaudeSecretName)
+  # and adds the card. Invoked asynchronously by VoteFunction; fetches the Claude Code binary into /tmp on a cold start.
+  AgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      Architectures: [arm64]
+      Handler: agent.handler
+      CodeUri: .
+      MemorySize: 2048
+      Timeout: 900
+      EphemeralStorage: { Size: 2048 }
+      ReservedConcurrentExecutions: 2
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+        MaximumEventAgeInSeconds: 3600
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref VotesTable
+          MAPS_SECRET_ID: !Ref MapsKeySecretName
+          CLAUDE_SECRET_ID: !Ref ClaudeSecretName
+          CLAUDE_CODE_VERSION: !Ref ClaudeCodeVersion
+          CLAUDE_CODE_SHA512: !Ref ClaudeCodeSha512
+          CLAUDE_MODEL: sonnet
+          PHOTO_MONTHLY_LIMIT: !Ref PhotoMonthlyLimit
+          SEARCH_MONTHLY_LIMIT: !Ref SearchMonthlyLimit
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref VotesTable }
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource:
+                - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${MapsKeySecretName}-*"
+                - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ClaudeSecretName}-*"
+            - Effect: Allow   # hands leftover suggestions to a fresh run of itself (by name, to avoid a circular reference)
+              Action: lambda:InvokeFunction
+              Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-AgentFunction*"
 
 Outputs:
   VoteApiUrl:

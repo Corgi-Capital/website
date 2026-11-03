@@ -7,7 +7,13 @@ Routes
   GET  /trips/{trip}?code=...          -> {"ok": true, "trip": {page data}, "ballots": {name: {item_id: 0-3}}, "mapsApiKey": "..."}
                                        (&only=ballots: just {"ok": true, "ballots": ...}). 403 {"ok": false, "error": "code"}
                                        for a wrong password or an unknown trip.
+                                       Both also carry "rev" (bumped whenever the places change) and "suggestions" (the last
+                                       few days' Suggest Spot entries and how each went).
   POST /trips/{trip}/ballots           body {"code", "name", "votes"} -> {"ok": true, "ballots": ...}
+  POST /trips/{trip}/suggestions       body {"code", "name", "text", "why"} -> {"ok": true, "suggestions": [...]}. One
+                                       suggestion per line of text (up to 5): a Google Maps link, a Tabelog link or a
+                                       name. Each is queued and the agent function (agent.py) is invoked to review and
+                                       add it. 429 "limit" past the trip's daily cap.
   GET  /usage                          -> {"ok": true, "month": "YYYY-MM", "used": {...}, "limits": {...}}
   POST /usage                          body {"trip", "code", "kinds": ["search", "photo"]} -> {"ok": true}; 403 "code" without a
                                        valid password; 429 {"ok": false, "error": "limit"} only when the month's budget is spent;
@@ -15,8 +21,12 @@ Routes
                                        Reserves one unit of each kind against this month's Google Maps budget.
 
 Table layout (single table, on-demand)
-  pk = "trip#<trip>", sk = "meta"          travelers [names], code_hash (see code_hash), page (page data as JSON), created, updated
+  pk = "trip#<trip>", sk = "meta"          travelers [names], code_hash (see code_hash), page (page data as JSON), rev,
+                                           created, updated
   pk = "trip#<trip>", sk = "ballot#<name>" votes {item_id: int}, updated
+  pk = "trip#<trip>", sk = "sugg#<ms>-<r>" by, text, why, status (queued, working, added, duplicate, rejected, failed),
+                                           reason, item (the card's id), created, updated
+  pk = "trip#<trip>", sk = "suggday#<date>" count (suggestions that day, Pacific time)
   pk = "usage#<YYYY-MM>", sk = "<kind>"    count (Google Maps calls made this month, Pacific time like Google billing)
 """
 import hashlib
@@ -34,6 +44,9 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 TABLE = boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])
 SECRETS = boto3.client("secretsmanager")
+LAMBDA = boto3.client("lambda")
+SUGGEST_DAILY_LIMIT = int(os.environ.get("SUGGEST_DAILY_LIMIT", "25"))
+SUGGEST_SHOW_DAYS = 4
 _maps_key = {"value": None, "at": 0}
 TRIP_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 ITEM_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
@@ -126,6 +139,49 @@ def _ballots(trip):
         kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
 
 
+def _suggestion_rows(trip, limit=40):
+    """The newest suggestion rows, newest first."""
+    q = TABLE.query(KeyConditionExpression=Key("pk").eq(f"trip#{trip}") & Key("sk").begins_with("sugg#"), ScanIndexForward=False, Limit=limit)
+    return q["Items"]
+
+
+def _suggestions(trip):
+    """The last few days' suggestions as the page shows them."""
+    since = int(time.time()) - SUGGEST_SHOW_DAYS * 86400
+    keep = ("by", "text", "why", "status", "reason", "item")
+    return [{"id": r["sk"], **{k: str(r.get(k, "")) for k in keep}, "created": int(r.get("created", 0)), "updated": int(r.get("updated", 0))}
+            for r in _suggestion_rows(trip) if int(r.get("created", 0)) >= since]
+
+
+def _suggest(trip, meta, body):
+    if not _code_ok(meta, body.get("code")):
+        return _resp(403, {"ok": False, "error": "code"})
+    name = body.get("name")
+    if name not in meta.get("travelers", []):
+        return _resp(400, {"ok": False, "error": "name"})
+    text, why = body.get("text"), body.get("why") or ""
+    lines = list(dict.fromkeys(l.strip() for l in text.splitlines() if l.strip())) if isinstance(text, str) else []
+    if not lines or len(lines) > 5 or any(len(l) > 500 for l in lines) or not isinstance(why, str):
+        return _resp(400, {"ok": False, "error": "text"})
+    day = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
+    try:
+        TABLE.update_item(Key={"pk": f"trip#{trip}", "sk": f"suggday#{day}"}, UpdateExpression="ADD #c :n",
+                          ConditionExpression="attribute_not_exists(#c) OR #c <= :most", ExpressionAttributeNames={"#c": "count"},
+                          ExpressionAttributeValues={":n": len(lines), ":most": SUGGEST_DAILY_LIMIT - len(lines)})
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return _resp(429, {"ok": False, "error": "limit"})
+        raise
+    now, ids = time.time(), []
+    for n, line in enumerate(lines):
+        sk = f"sugg#{int(now * 1000) + n:013d}-{os.urandom(2).hex()}"
+        TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": sk, "by": name, "text": line, "why": why.strip()[:200],
+                             "status": "queued", "created": int(now), "updated": int(now)})
+        ids.append(sk)
+    LAMBDA.invoke(FunctionName=os.environ["AGENT_FUNCTION"], InvocationType="Event", Payload=json.dumps({"trip": trip, "ids": ids}).encode())
+    return _resp(200, {"ok": True, "suggestions": _suggestions(trip)})
+
+
 def _get_maps_key():
     # Cached for an hour so a rotated key takes effect without a redeploy. None if the secret can't be read: the page
     # then shows illustrations.
@@ -170,9 +226,17 @@ def handler(event, _context):
         qs = event.get("queryStringParameters") or {}
         if not _code_ok(meta, qs.get("code")):
             return _resp(403, {"ok": False, "error": "code"})
-        if qs.get("only") == "ballots":  # the page's 30-second refresh
-            return _resp(200, {"ok": True, "ballots": _ballots(trip)})
-        return _resp(200, {"ok": True, "trip": _page(trip, meta), "ballots": _ballots(trip), "mapsApiKey": _get_maps_key()})
+        live = {"rev": int(meta.get("rev", 0)), "suggestions": _suggestions(trip)}
+        if qs.get("only") == "ballots":  # the page's refresh
+            return _resp(200, {"ok": True, "ballots": _ballots(trip), **live})
+        return _resp(200, {"ok": True, "trip": _page(trip, meta), "ballots": _ballots(trip), "mapsApiKey": _get_maps_key(), **live})
+
+    if method == "POST" and len(parts) == 3 and parts[2] == "suggestions":
+        try:
+            body = json.loads(event.get("body") or "{}")
+        except json.JSONDecodeError:
+            return _resp(400, {"ok": False, "error": "json"})
+        return _suggest(trip, meta, body if isinstance(body, dict) else {})
 
     if method == "POST" and len(parts) == 3 and parts[2] == "ballots":
         try:

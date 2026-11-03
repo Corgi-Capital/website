@@ -9,6 +9,10 @@ See ../trip.example.json for the format.
   python create_trip.py --table <TableName> --export niseko-2027 > ../trips/niseko-2027.json   # file back from the server
 
 Ballots are kept either way. Passwords match trimmed and in any case (a phone may capitalize the first letter).
+
+Places added on the page through Suggest Spot live only on the server until you --export. An upload that would drop
+any of them stops and lists them; --export first (or pass --drop-suggested). Every upload bumps the trip's revision, so
+open pages reload the places.
 """
 import argparse
 import hashlib
@@ -45,13 +49,21 @@ def check_page(page):
     bad_photos = [i.get("id") for i in items if "photos" in i and not (isinstance(i["photos"], list) and
                   all(isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 9 for n in i["photos"]))]
     # Optional labels the page sorts and filters on, and slot: a dedicated itinerary slot (true or e.g. "Fri dinner").
-    allowed = {"kind": {"meal", "sweets", "drinks"}, "tier": {"casual", "mid", "splurge"}, "group": {"specialty", "favorite"}}
+    allowed = {"kind": {"meal", "sweets", "drinks", "event"}, "tier": {"casual", "mid", "splurge"},
+               "group": {"specialty", "favorite", "tastes", "event"}}
     bad_labels = [f"{i.get('id')}.{k}" for i in items for k, ok in allowed.items() if k in i and i[k] not in ok]
     bad_slot = [i.get("id") for i in items if "slot" in i and not (isinstance(i["slot"], bool) or (isinstance(i["slot"], str) and 0 < len(i["slot"]) <= 40))]
     bad_flags = [i.get("id") for i in items if "izakaya" in i and not isinstance(i["izakaya"], bool)]   # the Izakaya filter
     known = page.get("knownFor", {})
     bad_known = not isinstance(known, dict) or any(not isinstance(v, list) or not all(isinstance(x, str) for x in v) for v in known.values())
-    if bad or dupes or lost or bad_place or bad_photos or bad_labels or bad_slot or bad_flags or bad_known:
+    # time: per region, when the group is there, e.g. ["2/19 1PM-11PM", "2/22"] (a bare date is 9AM-11PM)
+    span = re.compile(r"^\d{1,2}/\d{1,2}( (\d{1,2}(:\d\d)?[AP]M)?-(\d{1,2}(:\d\d)?[AP]M)?)?$")
+    when = page.get("time", {})
+    bad_time = [r for r, v in (when.items() if isinstance(when, dict) else [("time", None)])
+                if r not in (page.get("regions") or []) or not isinstance(v, list) or not all(isinstance(x, str) and span.match(x) for x in v)]
+    if bad or dupes or lost or bad_place or bad_photos or bad_labels or bad_slot or bad_flags or bad_known or bad_time:
+        if bad_time:
+            raise SystemExit(f"time must map regions to lists like \"2/19 1PM-11PM\" or \"2/22\": bad {bad_time}")
         raise SystemExit(f"bad item ids: {bad}; duplicate item ids: {dupes}; regions missing from 'regions': {lost}; "
                          f"bad placeId: {bad_place}; bad photos (positions 0-9): {bad_photos}; bad labels: {bad_labels} "
                          f"(allowed: {allowed}); bad slot (true or a label up to 40 characters): {bad_slot}; "
@@ -66,6 +78,7 @@ g = p.add_mutually_exclusive_group(required=True)
 g.add_argument("--file", help="the trip's JSON file")
 g.add_argument("--export", metavar="TRIP", help="print a trip's JSON as the server has it")
 p.add_argument("--code", help="the password travelers type in: needed the first time, optional after")
+p.add_argument("--drop-suggested", action="store_true", help="upload even if it drops places added through Suggest Spot")
 a = p.parse_args()
 table = boto3.resource("dynamodb", region_name=a.region).Table(a.table)
 
@@ -83,8 +96,16 @@ with open(a.file, encoding="utf-8") as f:
     page = json.load(f)
 check_page(page)
 trip, names = page.pop("id"), [n.strip() for n in page.pop("travelers")]
+old = table.get_item(Key={"pk": f"trip#{trip}", "sk": "meta"}).get("Item") or {}
+mine = {i["id"] for i in page["items"]}
+lost = [i for i in json.loads(old.get("page") or "{}").get("items", []) if i.get("suggestedBy") and i["id"] not in mine]
+if lost and not a.drop_suggested:
+    raise SystemExit("The server has places added through Suggest Spot that this file doesn't: "
+                     + ", ".join(f"{i['id']} ({i.get('place')}, by {i['suggestedBy']})" for i in lost)
+                     + f"\nRun --export {trip} into the file first, or pass --drop-suggested to remove them.")
 now = int(time.time())
-fields = {"travelers": names, "page": json.dumps(page, ensure_ascii=False, separators=(",", ":")), "updated": now}
+fields = {"travelers": names, "page": json.dumps(page, ensure_ascii=False, separators=(",", ":")), "updated": now,
+          "rev": int(old.get("rev", 0)) + 1}
 if a.code is not None:
     if not a.code.strip():
         raise SystemExit("The password can't be blank")
@@ -93,14 +114,18 @@ kw = {
     "Key": {"pk": f"trip#{trip}", "sk": "meta"},
     "UpdateExpression": "SET " + ", ".join(f"#{k} = :{k}" for k in fields) + ", #created = if_not_exists(#created, :now)",
     "ExpressionAttributeNames": {**{f"#{k}": k for k in fields}, "#created": "created"},
-    "ExpressionAttributeValues": {**{f":{k}": v for k, v in fields.items()}, ":now": now},
+    "ExpressionAttributeValues": {**{f":{k}": v for k, v in fields.items()}, ":now": now, ":oldrev": int(old.get("rev", 0))},
+    # Nothing (a suggestion, say) may have changed the trip since it was read above.
+    "ConditionExpression": "(attribute_not_exists(#rev) OR #rev = :oldrev)",
 }
 if a.code is None:
-    kw["ConditionExpression"] = "attribute_exists(code_hash)"  # new page data only: the trip must already have a password
+    if "code_hash" not in old:
+        raise SystemExit(f"{trip} isn't on the server yet: give it a password with --code")
+    kw["ConditionExpression"] += " AND attribute_exists(code_hash)"  # new page data only: keep the password
 try:
     table.update_item(**kw)
 except ClientError as e:
     if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-        raise SystemExit(f"{trip} isn't on the server yet: give it a password with --code")
+        raise SystemExit(f"{trip} changed on the server while uploading (a suggestion was probably just added). Run it again.")
     raise
 print(f"Trip {trip}: {len(page['items'])} items for {', '.join(names)}; password {'set' if a.code else 'unchanged'}")

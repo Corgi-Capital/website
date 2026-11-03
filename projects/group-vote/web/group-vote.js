@@ -8,7 +8,8 @@ const CFG=Object.assign({apiUrl:""},window.GROUP_VOTE||{});
 const TRIP_ID=String((window.TRIP&&window.TRIP.id)||"");
 let TRIP={}, TRAVELERS=[], ITEMS=[], REGIONS=[];   // filled in from the server once the password checks out
 const VLABEL={3:"Must",2:"I want",1:"Meh",0:"Nah"};   // shown in capitals; 3/2/1/0 points
-const GROUPS=[["specialty","Regional specialties"],["favorite","Local favorites"]];
+// Each region's sections, in order. "tastes" are picked for this group (and where Suggest Spot puts new places).
+const GROUPS=[["specialty","Regional Specialties"],["favorite","Local Favorites"],["tastes","Group Tastes"],["event","Events"]];
 const TIER={casual:"Casual",mid:"Mid-Range",splurge:"Splurge"};
 // Small line icons for the card pills and the matching filters (16px grid, drawn in the text color).
 const ICON={
@@ -20,19 +21,23 @@ const ICON={
   izakaya:'<path d="M6 2h4M6 14h4M8 3.2c-2.9 0-4.6 2.1-4.6 4.8s1.7 4.8 4.6 4.8 4.6-2.1 4.6-4.8S10.9 3.2 8 3.2z"/><path d="M3.5 6.4h9M3.5 9.6h9"/>',
   specialty:'<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>',
   slotted:'<path d="M2.5 3.5h11v10h-11zM2.5 6.5h11M5.5 2v3M10.5 2v3"/><path d="M5.8 10.1l1.6 1.6 3-3"/>',
-  todo:'<path d="M10.5 2.5l3 3-8 8h-3v-3z"/>'
+  todo:'<path d="M10.5 2.5l3 3-8 8h-3v-3z"/>',
+  event:'<path d="M2.5 5h11v2a1.5 1.5 0 0 0 0 3v2h-11v-2a1.5 1.5 0 0 0 0-3z"/><path d="M9.5 5.5v1M9.5 8v1M9.5 10.5v1"/>',
+  tastes:'<path d="M8 13.5S2.5 10.2 2.5 6.3A2.8 2.8 0 0 1 8 5a2.8 2.8 0 0 1 5.5 1.3C13.5 10.2 8 13.5 8 13.5z"/>',
+  ig:'<rect x="2.5" y="2.5" width="11" height="11" rx="3.2"/><circle cx="8" cy="8" r="2.6"/><path d="M11.3 4.6v.1"/>',
+  plus:'<path d="M8 3v10M3 8h10"/>'
 };
-const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",izakaya:"izakaya",treats:"sweets",todo:"todo"};
+const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",izakaya:"izakaya",treats:"sweets",events:"event",todo:"todo"};
 const icon=k=>ICON[k]?'<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">'+ICON[k]+'</svg>':"";
 function pill(k,label,cls){ const s=el("span","tag"+(cls?" "+cls:"")); s.innerHTML=icon(k); s.appendChild(document.createTextNode(label)); return s }
-const FILTERS=[["all","All"],["slotted","On the Itinerary"],["casual","Casual"],["splurge","Splurge"],["izakaya","Izakaya"],["treats","Sweets & Drinks"],["todo","Needs Rating"]];
+const FILTERS=[["all","All"],["slotted","On the Itinerary"],["casual","Casual"],["splurge","Splurge"],["izakaya","Izakaya"],["treats","Sweets & Drinks"],["events","Events"],["todo","Needs Rating"]];
 // Card headings and award badges in title case. Small words stay lower case mid-title, and only a lower-case first
 // letter changes, so "IWSC", "TableCheck" and "2017-19" come through as written.
 const SMALL=new Set(["a","an","and","as","at","but","by","for","from","in","into","nor","of","on","or","per","the","to","via","vs","with"]);
 function titleCase(s){
   const ws=String(s||"").split(" ");
   return ws.map((w,i)=>w.split("-").map((p,j)=>{
-    const m=/^([^\p{L}]*)(\p{Ll})(.*)$/u.exec(p); if(!m) return p;
+    const m=/^([^\p{L}]*)(\p{Ll})(.*)$/u.exec(p); if(!m||/\d/.test(m[1])) return p;   // "3am", "2nd" stay as written
     const small=SMALL.has((m[2]+m[3]).replace(/[^\p{L}]/gu,""))&&!m[1]&&(i>0||j>0)&&i<ws.length-1&&!/:$/.test(ws[i-1]||"");
     return small?p:m[1]+m[2].toUpperCase()+m[3];
   }).join("-")).join(" ");
@@ -72,7 +77,13 @@ onigiri:`<path d="M50 16 Q57 16 61 24 L84 64 Q88 76 76 78 L24 78 Q12 76 16 64 L3
 yakitori:`<g stroke="#c8a77a" stroke-width="3" stroke-linecap="round"><path d="M12 82 L82 22"/><path d="M24 88 L92 32"/></g><g fill="#b5683a"><circle cx="30" cy="66" r="8"/><circle cx="56" cy="44" r="8"/></g><g fill="#7cb342"><circle cx="43" cy="55" r="6"/></g><g fill="#c97a45"><circle cx="44" cy="70" r="8"/><circle cx="58" cy="58" r="8"/><circle cx="72" cy="46" r="8"/></g><path d="M40 68 l8 -6 M54 56 l8 -6 M68 44 l8 -6" stroke="#8a4a24" stroke-width="2"/>`,
 truck:`<path d="M10 40 L64 40 L58 31 L16 31 Z" fill="#f6c453"/><rect x="10" y="40" width="54" height="30" rx="4" fill="#e85d4f"/><rect x="17" y="46" width="40" height="12" rx="2" fill="#ffe8b3"/><rect x="64" y="48" width="24" height="22" rx="3" fill="#c94a3e"/><rect x="68" y="52" width="13" height="9" rx="1" fill="#bfe3f2"/><circle cx="26" cy="72" r="7" fill="#2b2e33"/><circle cx="26" cy="72" r="3" fill="#8a9099"/><circle cx="74" cy="72" r="7" fill="#2b2e33"/><circle cx="74" cy="72" r="3" fill="#8a9099"/><path d="M30 26 q3-6 0-12 M40 26 q3-6 0-12" stroke="#c8d2da" stroke-width="2" fill="none"/>`,
 izakaya:`<rect x="8" y="86" width="84" height="4" rx="2" fill="#8a6a4a"/><path d="M33 4 L33 13" stroke="#3a2a20" stroke-width="2"/><rect x="23" y="12" width="20" height="6" rx="2" fill="#2b2420"/><ellipse cx="33" cy="39" rx="20" ry="22" fill="#d9432f"/><path d="M14 31 Q33 35 52 31 M13 39 Q33 43 53 39 M14 47 Q33 51 52 47" stroke="#a8301f" stroke-width="1.5" fill="none"/><ellipse cx="26" cy="33" rx="4" ry="9" fill="#ef6a52" opacity=".7"/><rect x="23" y="59" width="20" height="6" rx="2" fill="#2b2420"/><path d="M33 65 L33 72" stroke="#2b2420" stroke-width="2"/><rect x="66" y="40" width="8" height="15" rx="3" fill="#f1ead9"/><ellipse cx="70" cy="40" rx="5.5" ry="2" fill="#e6dcc6"/><path d="M66 53 Q56 63 57 73 Q58 86 70 86 Q82 86 83 73 Q84 63 74 53 Z" fill="#f1ead9"/><path d="M58 70 Q70 74 82 70" stroke="#3b6aa0" stroke-width="2.5" fill="none"/><path d="M38 76 L52 76 L50 86 L40 86 Z" fill="#f1ead9"/><ellipse cx="45" cy="76" rx="7" ry="2" fill="#d9c9a5"/>`,
-robata:`<rect x="10" y="62" width="80" height="22" rx="3" fill="#7a4e2d"/><rect x="10" y="62" width="80" height="5" fill="#8f5d36"/><g fill="#e8572f"><circle cx="22" cy="60" r="4"/><circle cx="34" cy="61" r="4"/><circle cx="46" cy="60" r="4"/><circle cx="58" cy="61" r="4"/><circle cx="70" cy="60" r="4"/><circle cx="80" cy="61" r="3.5"/></g><g fill="#f6a03a"><circle cx="28" cy="58" r="2"/><circle cx="52" cy="58" r="2"/><circle cx="74" cy="58" r="2"/></g><path d="M12 54 L88 54" stroke="#4a4f55" stroke-width="2"/><ellipse cx="34" cy="46" rx="20" ry="7" fill="#c98a4a"/><path d="M54 46 L64 39 L64 53 Z" fill="#b5763a"/><circle cx="19" cy="44.5" r="1.6" fill="#2b2420"/><path d="M28 41 l4 10 M36 40 l4 11 M44 41 l4 10" stroke="#8a5428" stroke-width="1.6"/><path d="M68 52 Q64 38 77 36 Q90 38 86 52 Z" fill="#f2d3b0"/><path d="M77 37 L72 51 M77 37 L77 51 M77 37 L82 51" stroke="#d9ae86" stroke-width="1.2"/><path d="M30 30 q3-6 0-12 M44 28 q3-6 0-12" stroke="#c8d2da" stroke-width="2" fill="none"/>`
+robata:`<rect x="10" y="62" width="80" height="22" rx="3" fill="#7a4e2d"/><rect x="10" y="62" width="80" height="5" fill="#8f5d36"/><g fill="#e8572f"><circle cx="22" cy="60" r="4"/><circle cx="34" cy="61" r="4"/><circle cx="46" cy="60" r="4"/><circle cx="58" cy="61" r="4"/><circle cx="70" cy="60" r="4"/><circle cx="80" cy="61" r="3.5"/></g><g fill="#f6a03a"><circle cx="28" cy="58" r="2"/><circle cx="52" cy="58" r="2"/><circle cx="74" cy="58" r="2"/></g><path d="M12 54 L88 54" stroke="#4a4f55" stroke-width="2"/><ellipse cx="34" cy="46" rx="20" ry="7" fill="#c98a4a"/><path d="M54 46 L64 39 L64 53 Z" fill="#b5763a"/><circle cx="19" cy="44.5" r="1.6" fill="#2b2420"/><path d="M28 41 l4 10 M36 40 l4 11 M44 41 l4 10" stroke="#8a5428" stroke-width="1.6"/><path d="M68 52 Q64 38 77 36 Q90 38 86 52 Z" fill="#f2d3b0"/><path d="M77 37 L72 51 M77 37 L77 51 M77 37 L82 51" stroke="#d9ae86" stroke-width="1.2"/><path d="M30 30 q3-6 0-12 M44 28 q3-6 0-12" stroke="#c8d2da" stroke-width="2" fill="none"/>`,
+onsen:`<ellipse cx="50" cy="68" rx="40" ry="14" fill="#5f6b73"/><ellipse cx="50" cy="66" rx="33" ry="9.5" fill="#8fc9e6"/><ellipse cx="40" cy="64" rx="11" ry="3" fill="#c9e9f6" opacity=".85"/><g fill="#7a8288"><circle cx="15" cy="66" r="5.5"/><circle cx="85" cy="66" r="5.5"/><circle cx="26" cy="77" r="5.5"/><circle cx="74" cy="77" r="5.5"/><circle cx="50" cy="80" r="5.5"/></g><path d="M34 48 q-6 -8 0 -16 q6 -8 0 -16 M50 46 q-6 -8 0 -16 q6 -8 0 -16 M66 48 q-6 -8 0 -16 q6 -8 0 -16" stroke="#e8eef2" stroke-width="3.2" fill="none" stroke-linecap="round"/>`,
+ski:`<path d="M8 76 L40 30 L55 50 L66 37 L92 76 Z" fill="#cfd8de"/><path d="M40 30 L48 41 L43 40 L38 45 L33 40 Z" fill="#fff"/><path d="M66 37 L72 46 L68 45 L64 48 L61 45 Z" fill="#fff"/><path d="M14 87 L84 71 M20 92 L88 77" stroke="#e85d4f" stroke-width="4" stroke-linecap="round"/><g fill="#fff"><circle cx="20" cy="22" r="1.8"/><circle cx="80" cy="18" r="1.8"/><circle cx="60" cy="24" r="1.4"/></g>`,
+shop:`<rect x="16" y="40" width="68" height="42" rx="2" fill="#efe6d4"/><path d="M12 40 L20 25 L80 25 L88 40 Z" fill="#e85d4f"/><path d="M27 25 L25 40 M40 25 L40 40 M53 25 L55 40 M66 25 L70 40" stroke="#fff" stroke-width="5"/><rect x="23" y="50" width="24" height="17" rx="2" fill="#bfe3f2"/><rect x="56" y="50" width="20" height="32" rx="2" fill="#8a6a4a"/><circle cx="72" cy="67" r="1.6" fill="#f2c94c"/><circle cx="35" cy="58" r="4" fill="#f2c94c"/>`,
+lantern:`<path d="M6 22 Q50 42 94 22" stroke="#6b5b4b" stroke-width="1.5" fill="none"/><g fill="#f2b541"><ellipse cx="20" cy="38" rx="7" ry="9"/><ellipse cx="40" cy="45" rx="7" ry="9"/><ellipse cx="60" cy="45" rx="7" ry="9"/><ellipse cx="80" cy="38" rx="7" ry="9"/></g><g fill="#fff3c4" opacity=".75"><circle cx="20" cy="38" r="3"/><circle cx="40" cy="45" r="3"/><circle cx="60" cy="45" r="3"/><circle cx="80" cy="38" r="3"/></g><path d="M8 80 Q30 70 50 78 Q70 86 92 76 L92 90 L8 90 Z" fill="#e8eef2"/><g fill="#fff"><circle cx="30" cy="64" r="1.6"/><circle cx="70" cy="60" r="1.6"/><circle cx="52" cy="68" r="1.3"/></g>`,
+steam:`<path d="M6 80 L22 58 L36 66 L50 52 L64 64 L78 56 L94 80 Z" fill="#c89a62"/><path d="M6 80 L94 80 L94 88 L6 88 Z" fill="#a8763f"/><circle cx="40" cy="74" r="4" fill="#e3c25a"/><circle cx="66" cy="72" r="3" fill="#e3c25a"/><path d="M30 56 q-5 -8 0 -16 q5 -8 0 -16 M52 48 q-5 -8 0 -16 q5 -8 0 -16 M72 54 q-5 -8 0 -16" stroke="#f2f2f0" stroke-width="5" fill="none" stroke-linecap="round" opacity=".85"/>`,
+boat:`<rect x="10" y="30" width="30" height="34" fill="#9b5a3c"/><path d="M8 30 L25 19 L42 30 Z" fill="#6b3a2a"/><rect x="16" y="38" width="6" height="8" fill="#f2d78a"/><rect x="28" y="38" width="6" height="8" fill="#f2d78a"/><rect x="8" y="64" width="84" height="22" fill="#3d6f8f"/><path d="M44 66 L80 66 L74 74 L50 74 Z" fill="#e8e2d6"/><path d="M60 66 L60 54" stroke="#6b5b4b" stroke-width="2"/><path d="M14 75 q6 -3 12 0 t12 0 M58 81 q6 -3 12 0 t12 0" stroke="#8fc9e6" stroke-width="2" fill="none"/><path d="M87 64 L87 40" stroke="#4a4f55" stroke-width="2"/><circle cx="87" cy="38" r="4" fill="#f2d78a"/>`
 };
 const $=s=>document.querySelector(s);
 function el(tag,cls,text){const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e}
@@ -125,9 +136,94 @@ async function loadVotes(){
     const mine=(me&&(saving||unsent))?ballots[me]:null, before=JSON.stringify(ballots);
     ballots=j.ballots||{};
     if(mine) ballots[me]=mine;
-    if(JSON.stringify(ballots)!==before) refresh(); else status("");
+    if(typeof j.rev==="number"&&j.rev!==REV) await reloadTrip();   // places changed (a suggestion landed, or a new upload)
+    else if(JSON.stringify(ballots)!==before) refresh(); else status("");
+    if(Array.isArray(j.suggestions)) setSugs(j.suggestions);
     if(unsent){ unsent=false; saveVote() }
-  } finally { loading=false }
+  } finally { loading=false; pace() }
+}
+// The trip's places again (after a suggestion was added): re-rendered in place, scrolled to where you were, with the new
+// cards flashed.
+async function reloadTrip(){
+  const j=await api(tripPath+"?code="+encodeURIComponent(code));
+  if(!j||!j.ok){ if(j&&j.error==="code") lockOut(CHANGED); return }
+  const had=new Set(ITEMS.map(i=>i.id)), first=[...document.querySelectorAll(".card")].find(c=>c.getBoundingClientRect().bottom>90);
+  const anchor=first?{id:first.dataset.id, y:first.getBoundingClientRect().top}:null;
+  setTrip(j.trip||{}); REV=+j.rev||0;
+  render();
+  if(anchor){ const c=document.querySelector('.card[data-id="'+anchor.id+'"]'); if(c) scrollBy(0,c.getBoundingClientRect().top-anchor.y) }
+  ITEMS.filter(i=>!had.has(i.id)).forEach(i=>{ const k=cards[i.id]; if(k) k.c.classList.add("flash") });
+}
+function setTrip(t){
+  TRIP=t; TRAVELERS=TRIP.travelers||[]; REGIONS=TRIP.regions||[];
+  ITEMS=(TRIP.items||[]).map(i=>Object.assign({},i,{dish:titleCase(i.dish),badge:titleCase(i.badge)}));
+}
+
+// ---------- Suggest Spot ----------
+// Anyone can paste Google Maps links, Tabelog links or names; the server queues each and Claude (agent.py) looks it up,
+// writes its card and adds it, or says why not. The panel shows the last few days of suggestions; while any is still
+// being looked up the page checks every 5 seconds.
+let REV=0, SUGS=[], paceTimer=0;
+const SUG_STATE={queued:"Waiting",working:"Looking it up",added:"Added",duplicate:"Already listed",rejected:"Couldn't add",failed:"Couldn't add"};
+const sugPending=()=>SUGS.some(s=>s.status==="queued"||s.status==="working");
+function pace(){ clearTimeout(paceTimer); if(sugPending()) paceTimer=setTimeout(loadVotes,5000) }
+function setSugs(xs){ const before=JSON.stringify(SUGS); SUGS=xs; if(JSON.stringify(SUGS)!==before) renderSugs() }
+const sugWhat=t=>/google\.|goo\.gl/.test(t)?"a Google Maps link":/tabelog\.com/.test(t)?"a Tabelog link":/^https?:\/\//.test(t)?"a link":"“"+(t.length>60?t.slice(0,58)+"…":t)+"”";
+function renderSugs(){
+  const S=$("#sugs"); if(!S) return;
+  S.textContent=""; S.hidden=!SUGS.length; if(!SUGS.length) return;
+  S.appendChild(el("h2","sugs-h","Suggestions"));
+  const ul=el("ul","sugs-l");
+  SUGS.slice(0,8).forEach(s=>{
+    const li=el("li","sug "+s.status), busy=s.status==="queued"||s.status==="working";
+    li.appendChild(el("span","sug-st",SUG_STATE[s.status]||s.status));
+    const txt=el("span","sug-txt",busy?sugWhat(s.text)+" from "+s.by:money(s.reason||sugWhat(s.text))+" · "+s.by);
+    li.appendChild(txt);
+    if(s.item&&ITEMS.some(i=>i.id===s.item)){ const a=el("button","sug-see","See it"); a.type="button"; a.onclick=()=>seeItem(s.item); li.appendChild(a) }
+    ul.appendChild(li) });
+  S.appendChild(ul);
+}
+function seeItem(id){
+  if(!visibleItems().some(i=>i.id===id)){ filter="all"; syncTools(); render() }
+  const k=cards[id]; if(!k) return;
+  k.c.scrollIntoView({behavior:REDUCED?"auto":"smooth",block:"center"}); k.c.classList.remove("flash"); void k.c.offsetWidth; k.c.classList.add("flash");
+}
+function nudgeWho(){ const w=$("#whoWrap"); w.classList.remove("nudge"); void w.offsetWidth; w.classList.add("nudge"); toast("Pick your name first") }
+function openSuggest(){
+  if(!me) return nudgeWho();
+  if(document.querySelector(".sg")) return;
+  const d=el("div","sg"); d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","sgTitle");
+  d.innerHTML='<form class="sg-card" novalidate><h2 id="sgTitle">Suggest a Spot</h2>'
+    +'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Claude looks each one up, writes its card and adds it under Group Tastes (events under Events). It takes a minute or two, and everyone sees it.</p>'
+    +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;or a name and the town"></textarea>'
+    +'<label class="sg-l" for="sgWhy">Why <span>(optional)</span></label><input id="sgWhy" type="text" maxlength="200" placeholder="What makes it worth a stop?">'
+    +'<p class="sg-msg" role="status" aria-live="polite"></p>'
+    +'<div class="sg-row"><button type="button" class="sg-cancel">Cancel</button><button type="submit" class="sg-go">Suggest</button></div></form>';
+  document.body.appendChild(d); document.body.classList.add("lb-open");
+  const f=d.querySelector("form"), ta=d.querySelector("#sgText"), why=d.querySelector("#sgWhy"), msg=d.querySelector(".sg-msg"), go=d.querySelector(".sg-go");
+  function close(){ d.remove(); document.body.classList.remove("lb-open"); removeEventListener("keydown",key,true); const b=$("#suggestBtn"); if(b) b.focus() }
+  function key(e){
+    if(e.key==="Escape"){ e.preventDefault(); close() }
+    else if(e.key==="Tab"){ const fs=[...d.querySelectorAll("textarea,input,button:not([disabled])")], i=fs.indexOf(document.activeElement);
+      if(e.shiftKey&&i<=0){ e.preventDefault(); fs[fs.length-1].focus() } else if(!e.shiftKey&&i===fs.length-1){ e.preventDefault(); fs[0].focus() } }
+  }
+  addEventListener("keydown",key,true);
+  d.addEventListener("click",e=>{ if(e.target===d) close() });
+  d.querySelector(".sg-cancel").onclick=close;
+  f.addEventListener("submit",async e=>{
+    e.preventDefault();
+    const lines=ta.value.split("\n").map(s=>s.trim()).filter(Boolean);
+    if(!lines.length){ msg.textContent="Paste a link or type a name."; ta.focus(); return }
+    if(lines.length>5){ msg.textContent="Up to 5 at a time, please."; ta.focus(); return }
+    go.disabled=true; msg.textContent="Sending…";
+    const j=await post(tripPath+"/suggestions",{code,name:me,text:lines.join("\n"),why:why.value.trim()});
+    go.disabled=false;
+    if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); toast(lines.length>1?"Claude is looking them up":"Claude is looking it up"); pace();
+      const S=$("#sugs"); if(S&&S.getBoundingClientRect().top<0) S.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) }
+    else if(j&&j.error==="code") lockOut(CHANGED);
+    else msg.textContent=j&&j.error==="limit"?"That's today's limit for suggestions. Try again tomorrow.":j&&j.error==="text"?"One link or name per line, up to 5.":"Couldn't send that. Try again in a moment.";
+  });
+  ta.focus();
 }
 function saveVote(){
   const who=me; if(!who) return;
@@ -328,6 +424,7 @@ function visibleItems(){
   if(filter==="splurge") return ITEMS.filter(i=>i.tier==="splurge");
   if(filter==="izakaya") return ITEMS.filter(i=>i.izakaya);
   if(filter==="treats") return ITEMS.filter(i=>i.kind==="sweets"||i.kind==="drinks");
+  if(filter==="events") return ITEMS.filter(i=>i.kind==="event"||i.group==="event");
   if(filter==="todo") return ITEMS.filter(i=>typeof mineOf(i.id)!=="number");
   if(filter==="slotted") return ITEMS.filter(i=>i.slot);
   return ITEMS;
@@ -358,9 +455,13 @@ function card(it,rank){
   if(TIER[it.tier]) tags.appendChild(pill(it.tier,TIER[it.tier]));
   if(it.izakaya) tags.appendChild(pill("izakaya","Izakaya"));
   if(it.kind==="sweets"||it.kind==="drinks") tags.appendChild(pill(it.kind,it.kind==="sweets"?"Sweets":"Drinks"));
+  if(it.kind==="event") tags.appendChild(pill("event","Event"));
   if(rank&&it.group==="specialty") tags.appendChild(pill("specialty","Regional Specialty","spec"));
-  b.appendChild(tags);
-  if(it.note) b.appendChild(el("p","note",it.note));
+  if(rank&&it.group==="tastes") tags.appendChild(pill("tastes","Group Taste","spec"));
+  if(tags.firstChild) b.appendChild(tags);
+  if(it.note){ const n=el("p","note",money(it.note)); n.dataset.raw=it.note; b.appendChild(n) }
+  if(it.fits){ const f=el("p","fits"); f.innerHTML=icon("tastes"); f.appendChild(document.createTextNode(it.fits)); b.appendChild(f) }   // why it suits this group
+  if(it.suggestedBy){ const sb=el("p","sugg-by","Suggested by "+it.suggestedBy); if(it.why) sb.appendChild(el("q",null,it.why)); b.appendChild(sb) }
   // The links, vote and tally sit together at the foot of the card with fixed gaps, so cards in a row line up.
   const act=el("div","act");
   // Tabelog (or the place's own page) first, then Google Maps: whichever the place has.
@@ -368,6 +469,8 @@ function card(it,rank){
   if(it.url){ let h=""; try{ h=new URL(it.url).hostname }catch(e){}
     const a=el("a","lnk",/(^|\.)tabelog\.com$/.test(h)?"Tabelog":/tablecheck\.com$/.test(h)?"Book on TableCheck":"Website");
     a.href=it.url; a.target="_blank"; a.rel="noopener"; links.appendChild(a) }
+  if(/^https:\/\/(www\.)?instagram\.com\//.test(it.ig||"")){ const a=el("a","lnk ig"); a.innerHTML=icon("ig"); a.appendChild(document.createTextNode("IG"));
+    a.href=it.ig; a.target="_blank"; a.rel="noopener"; a.setAttribute("aria-label",it.place+" on Instagram"); links.appendChild(a) }
   if(it.placeId||it.q){ const g=el("a","lnk gmaps"); g.href=mapsLink(it); g.target="_blank"; g.rel="noopener"; g.dataset.id=it.id;
     g.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
     g.appendChild(gm()); g.setAttribute("aria-label",it.place+" on Google Maps: every photo and review"); links.appendChild(g) }
@@ -429,6 +532,20 @@ function renderBoard(){
   if(!planned) B.appendChild(el("p","board-note","Once places get a dedicated slot on the itinerary, this shows how many of each person's picks made it. Every place stays on as an alternative."));
 }
 function refresh(){ Object.keys(cards).forEach(patch); refreshBar() }
+// When the group is in a region, from the trip's "time": {"Region": ["2/19 1PM-11PM", "2/22", "2/27 -11AM"]}. A day runs
+// 9AM-11PM unless a window says otherwise, and the region's days are its hours over 14, to the nearest tenth.
+// Consecutive dates with the same hours print as one range: "2/22 - 2/26 9AM - 11PM".
+function when(r){
+  const hour=t=>{ const x=/^(\d{1,2})(?::(\d\d))?([AP])M$/i.exec(t||""); if(!x) return null; return (+x[1])%12+(+(x[2]||0))/60+(/p/i.test(x[3])?12:0) };
+  const xs=((TRIP.time||{})[r]||[]).map(s=>{ const m=/^(\d{1,2})\/(\d{1,2})(?: (\S*)-(\S*))?$/.exec(String(s).trim()); if(!m) return null;
+    const a=hour(m[3]), b=hour(m[4]); return {m:+m[1], d:+m[2], a:a==null?9:a, b:b==null?23:b} }).filter(Boolean);
+  if(!xs.length) return null;
+  const hrs=xs.reduce((t,x)=>t+Math.max(0,x.b-x.a),0), yr=+TRIP.year||new Date().getFullYear();
+  const next=(p,x)=>new Date(yr,x.m-1,x.d)-new Date(yr,p.m2-1,p.d2)===864e5;
+  const clock=v=>{ const H=Math.floor(v), M=Math.round((v-H)*60); return (H%12||12)+(M?":"+String(M).padStart(2,"0"):"")+(H>=12&&H<24?"PM":"AM") };
+  const runs=[]; xs.forEach(x=>{ const p=runs[runs.length-1]; if(p&&p.a===x.a&&p.b===x.b&&next(p,x)){ p.m2=x.m; p.d2=x.d } else runs.push(Object.assign({m2:x.m,d2:x.d},x)) });
+  return {days:(hrs/14).toFixed(1), text:runs.map(x=>(x.m+"/"+x.d+(x.m2!==x.m||x.d2!==x.d?" - "+x.m2+"/"+x.d2:"")+" "+clock(x.a)+" - "+clock(x.b)).replace(/ /g," ")).join(", ")};   // lines break only between windows
+}
 // Each Tabelog score's place within its own region, best first: a thinly reviewed area scores lower across the board
 // than a big city, so the color compares like with like. t runs 0 (the region's lowest) to 1 (its best); ties share.
 let GRADE={};
@@ -452,12 +569,15 @@ function render(){
     // Each region: what it's known for, then its regional specialties, then local favorites.
     REGIONS.forEach(g=>{ const its=xs.filter(i=>i.r===g); if(!its.length) return;
       const s=el("section","region"); s.id="region-"+slug(g);
-      const h=el("h2","sec",g); h.appendChild(el("small",null,its.length+(its.length===1?" spot":" spots"))); s.appendChild(h);
+      const w=when(g), h=el("h2","sec",g);
+      h.appendChild(el("small",null,its.length+(its.length===1?" Spot":" Spots")+(w?" · "+w.days+(w.days==="1.0"?" Day":" Days"):""))); s.appendChild(h);
+      if(w) s.appendChild(el("p","when",w.text));
       const known=(TRIP.knownFor||{})[g]; if(known&&known.length) s.appendChild(el("p","known","Known for "+known.join(", ")));
-      const parts=GROUPS.map(([k,label])=>[label,its.filter(i=>i.group===k)]);
-      parts.push(["More to try",its.filter(i=>!GROUPS.some(([k])=>k===i.group))]);
-      const used=parts.filter(([,v])=>v.length);
-      used.forEach(([label,v])=>{ if(used.length>1){ const sh=el("h3","sub",label); sh.appendChild(el("small",null,String(v.length))); s.appendChild(sh) }
+      const parts=GROUPS.map(([k,label])=>[k,label,its.filter(i=>i.group===k)]);
+      parts.push(["",TRIP.otherLabel||"More to Try",its.filter(i=>!GROUPS.some(([k])=>k===i.group))]);
+      const used=parts.filter(([,,v])=>v.length);
+      used.forEach(([k,label,v])=>{ if(used.length>1){ const sh=el("h3","sub",label); sh.appendChild(el("small",null,String(v.length))); s.appendChild(sh)
+          if(k==="tastes"&&TRIP.tastesLine) s.appendChild(el("p","subnote",TRIP.tastesLine)) }
         const grid=el("div","grid"); v.forEach(i=>grid.appendChild(card(i))); s.appendChild(grid) });
       L.appendChild(s) });
   } else {
@@ -468,7 +588,7 @@ function render(){
   refreshBar();
 }
 function cast(id,v){
-  if(!me){ const w=$("#whoWrap"); w.classList.remove("nudge"); void w.offsetWidth; w.classList.add("nudge"); toast("Pick your name first"); return }
+  if(!me) return nudgeWho();
   const cur=Object.assign({},ballots[me]||{});
   if(cur[id]===v) delete cur[id]; else cur[id]=v;
   ballots=Object.assign({},ballots,{[me]:cur}); patch(id); refreshBar(); saveVote();
@@ -482,13 +602,16 @@ function mountBallot(){
   const v=el("div","gv-ballot");
   v.innerHTML='<header class="hd"><div class="hd-top"><a class="mark" href="/">Corgi Capital</a>'
     +'<button type="button" class="lock" id="lock" title="Forget the password on this device">Lock</button></div>'
-    +'<h1 id="title"></h1><p id="intro"></p><nav class="jump" id="jump" aria-label="Jump to"></nav><section class="board" id="board" aria-label="Scoreboard"></section><div class="banner" id="setupBanner" hidden></div></header>'
+    +'<h1 id="title"></h1><p id="intro"></p><nav class="jump" id="jump" aria-label="Jump to"></nav><section class="board" id="board" aria-label="Scoreboard"></section><div class="banner" id="setupBanner" hidden></div>'
+    +'<section class="sugs" id="sugs" hidden aria-live="polite"></section></header>'
     +'<div class="bar"><div class="bar-in"><div class="who" id="whoWrap"><span class="label">I am</span><div class="chips" id="who"></div></div>'
-    +'<div class="counts"><span id="mine"></span><span class="status" id="status"></span></div></div>'
+    +'<div class="bar-r"><div class="counts"><span id="mine"></span><span class="status" id="status"></span></div>'
+    +'<button type="button" class="sugg-btn" id="suggestBtn">'+icon("plus")+'Suggest Spot</button></div></div>'
     +'<div class="progress" aria-hidden="true"><i id="progress"></i></div></div>'
     +'<div class="tools"><div class="seg" id="sort" role="group" aria-label="Sort"><button type="button" data-s="region">Region</button><button type="button" data-s="rank">Ranking</button></div>'
     +'<div class="filters" id="filters" role="group" aria-label="Show"></div><div class="legend"><span class="key"><i class="k3"></i>Must 3<i class="k2"></i>I want 2<i class="k1"></i>Meh 1<i class="k0"></i>Nah 0</span>'
-    +'<button type="button" class="cbt" id="cbt" aria-pressed="false" title="Blue to orange instead of green to red"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>Color-blind colors</button></div></div>'
+    +'<button type="button" class="cbt" id="cbt" aria-pressed="false" title="Blue to orange instead of green to red"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>Color-blind colors</button>'
+    +'<div class="seg cur" id="cur" role="group" aria-label="Prices in"><button type="button" data-c="usd">USD</button><button type="button" data-c="local"></button></div></div></div>'
     +'<main class="list" id="list"></main>'
     +'<div class="toast" id="toast" role="status" aria-live="polite"></div>';
   document.body.appendChild(v);
@@ -504,9 +627,29 @@ function mountBallot(){
   F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; syncTools(); render() });
   $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render() });
   $("#lock").addEventListener("click",()=>{ ls("code",null); ls("me",null); location.reload() });
+  $("#suggestBtn").addEventListener("click",openSuggest);
+  $('#cur [data-c="local"]').textContent=TRIP.currency||"JPY";
+  $("#cur").addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&b.dataset.c!==cur) setCur(b.dataset.c) });
+  document.querySelectorAll("#cur button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.c===cur)));
   let cb=false; try{ cb=localStorage.getItem("gv-cb")==="1" }catch(e){}
   setCb(cb); $("#cbt").addEventListener("click",()=>setCb(!document.documentElement.classList.contains("cb"),true));
   syncTools();
+}
+// Prices: notes are written in USD (at the trip's "fx" yen per dollar, 150 by default). The switch shows them in the
+// local currency instead, rounded like Tabelog's price bands (¥500 steps from ¥1,000, ¥1,000 steps from ¥10,000), so
+// "About $7-13" reads "About ¥1,000-2,000". Remembered on this device.
+let cur="usd"; try{ if(localStorage.getItem("gv-cur")==="local") cur="local" }catch(e){}
+function money(t){
+  if(cur==="usd"||!t) return t;
+  const fx=+TRIP.fx||150, sym=TRIP.currencySymbol||"¥";
+  const conv=x=>{ const v=parseFloat(x.replace(/,/g,""))*fx, step=v>=10000?1000:v>=1000?500:50; return Math.max(step,Math.round(v/step)*step).toLocaleString("en-US") };
+  return String(t).replace(/\$(\d[\d,]*(?:\.\d+)?)(?:(\s*[-–]\s*)\$?(\d[\d,]*(?:\.\d+)?))?/g,(m,a,d,b)=>sym+conv(a)+(b?"-"+conv(b):""));
+}
+function setCur(c){
+  cur=c; try{ if(c==="local") localStorage.setItem("gv-cur","local"); else localStorage.removeItem("gv-cur") }catch(e){}
+  document.querySelectorAll("#cur button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.c===cur)));
+  document.querySelectorAll(".note[data-raw]").forEach(n=>{ n.textContent=money(n.dataset.raw) });
+  renderSugs();
 }
 // Color-blind colors: the vote scale runs blue to orange instead of green to red. Remembered on this device, for every
 // trip.
@@ -575,13 +718,12 @@ function boot(){
     if(fine) input.focus();
   }
   function open(j){
-    TRIP=j.trip||{}; TRAVELERS=TRIP.travelers||[]; REGIONS=TRIP.regions||[];
-    ITEMS=(TRIP.items||[]).map(i=>Object.assign({},i,{dish:titleCase(i.dish),badge:titleCase(i.badge)}));
+    setTrip(j.trip||{}); REV=+j.rev||0; SUGS=j.suggestions||[];
     me=ls("me"); if(TRAVELERS.indexOf(me)<0) me=null;
     ballots=j.ballots||{};
     const swap=()=>{
       stopField(); gate.remove(); document.body.classList.remove("gv-locked"); window.scrollTo(0,0);
-      mountBallot(); renderWho(); render();
+      mountBallot(); renderWho(); render(); renderSugs(); pace();
       loadMaps(j.mapsApiKey).then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; pumpPhotos() }).catch(()=>{});
       setInterval(()=>{ if(document.visibilityState==="visible") loadVotes() },30000);
       document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") loadVotes() });
