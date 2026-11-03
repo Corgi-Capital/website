@@ -566,8 +566,8 @@ function when(r){
   const xs=stays(r); if(!xs.length) return null;
   let hrs=xs.reduce((t,x)=>t+awake(x),0);
   REGIONS.forEach(o=>{ if(o!==r) stays(o).forEach(y=>{ if(xs.some(x=>x.s<=y.s&&y.e<=x.e&&x.e-x.s>y.e-y.s)) hrs-=awake(y) }) });
-  const at=t=>{ const D=new Date(t); return [(D.getUTCMonth()+1)+"/"+D.getUTCDate(), clock(D.getUTCHours()+D.getUTCMinutes()/60)] };
-  const parts=xs.map(x=>{ const [d1,c1]=at(x.s), [d2,c2]=at(x.e); return [d1,c1,d2===d1?"":d2,c2] });   // [date, time, end date if another day, end time]
+  const at=t=>{ const D=new Date(t); return [(D.getUTCMonth()+1)+"/"+D.getUTCDate(), clock(D.getUTCHours()+D.getUTCMinutes()/60), "SunMonTueWedThuFriSat".substr(D.getUTCDay()*3,3)] };
+  const parts=xs.map(x=>{ const [d1,c1,w1]=at(x.s), [d2,c2,w2]=at(x.e); return [w1,d1,c1,d2===d1?"":w2,d2===d1?"":d2,c2] });   // [weekday, date, time, then the end; end day only if another day]
   return {days:(Math.max(0,hrs)/14).toFixed(1), stays:parts};
 }
 // Each Tabelog score's place within its own region, best first: a thinly reviewed area scores lower across the board
@@ -595,9 +595,9 @@ function render(){
       const s=el("section","region"); s.id="region-"+slug(g);
       const w=when(g), h=el("h2","sec",g);
       h.appendChild(el("small",null,its.length+(its.length===1?" Spot":" Spots")+(w?" · "+w.days+(w.days==="1.0"?" Day":" Days"):""))); s.appendChild(h);
-      if(w){ const p=el("p","when"); w.stays.forEach(([d1,c1,d2,c2],n)=>{ if(n) p.appendChild(el("span","sep",", "));
-        const st=el("span","stay"); st.append(el("span","d",d1)," ",el("span","t",c1),el("span","sep"," – "));
-        if(d2) st.append(el("span","d",d2)," "); st.appendChild(el("span","t",c2)); p.appendChild(st) }); s.appendChild(p) }
+      if(w){ const p=el("p","when"); w.stays.forEach(([w1,d1,c1,w2,d2,c2],n)=>{ if(n) p.appendChild(el("span","sep",", "));
+        const st=el("span","stay"); st.append(el("span","w",w1)," ",el("span","d",d1)," ",el("span","t",c1),el("span","sep"," – "));
+        if(d2) st.append(el("span","w",w2)," ",el("span","d",d2)," "); st.appendChild(el("span","t",c2)); p.appendChild(st) }); s.appendChild(p) }
       const known=(TRIP.knownFor||{})[g]; if(known&&known.length) s.appendChild(el("p","known","Known for "+known.join(", ")));
       const parts=GROUPS.map(([k,label])=>[k,label,its.filter(i=>i.group===k)]);
       parts.push(["",TRIP.otherLabel||"More to Try",its.filter(i=>!GROUPS.some(([k])=>k===i.group))]);

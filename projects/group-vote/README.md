@@ -8,6 +8,7 @@ Each trip sits behind a password. The public page holds only the trip id and sho
 - `server/`: AWS SAM app. One Lambda function URL and one DynamoDB table hold every trip's page data, password hash and votes.
 - `trips/<id>.json`: each trip's page data. Git ignores this folder because the repo is public; `trip.example.json` shows the format.
 - `tools/photo_sheets.py`: finds each place on Google and renders numbered contact sheets of its photos, for picking the food shots.
+- `tools/invite_email.py`: renders a trip's invitation email (trip plan and vote buttons, the password, the route) from the trip file's `invite` block.
 - Trip pages live under `events/` (first one: `events/2026/niseko/`). Each sets `window.TRIP = { id: "..." }` and loads the engine.
 
 ## The page
@@ -61,7 +62,7 @@ The server keeps a monthly count of Google calls (Pacific-time months, matching 
 
 The page looks a place up as its card nears the screen, then fetches the strip's first photo; the others load only when someone swipes to them, and full screen reuses the same photos, so each photo costs once per page view. If Google fails before any lookup works, the page stops looking for that view; if Google refuses photos (its daily cap, below), it stops asking at the first refusal and says so. Either way the Google Maps buttons still work: they're plain links that need no API call.
 
-The count covers every trip page, since they share one key. Reserving needs a trip's password, so strangers can't spend the budget. Google's own quotas in the Cloud console are the backstop, together with a $5 budget alert. One of them caps photos per day ("GetPhotoMediaRequest per day"); when it runs out, photos stop for everyone until midnight Pacific. Raise it there if the group hits it.
+The count covers every trip page, since they share one key. Reserving needs a trip's password, so strangers can't spend the budget. Google's own quotas in the Cloud console are the backstop, together with a $5 budget alert. One of them caps photos per day ("GetPhotoMediaRequest per day", 300 on this project as of Nov 2026, so one busy day can use it up); when it runs out, photos stop for everyone until midnight Pacific and the page says when they come back. Raise it there if the group hits it.
 
 ## Each new trip
 
