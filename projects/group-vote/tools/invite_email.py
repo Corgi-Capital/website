@@ -5,8 +5,10 @@ to the vote, the password, the route and how the vote works.
 
 Reads the trip file's "invite" block:
   {"subtitle": "Ski Trip", "dates": "February 18-28, 2027", "plan": "<trip plan URL, e.g. Notion>",
-   "vote": "<the vote page URL>", "intro": "<one or two sentences>",
-   "stops": [["Sapporo", "Feb 19-21 · two nights"], ...], "facts": [["Ski days", "Mon Grand Hirafu · ..."], ...]}
+   "vote": "<the vote page URL>", "intro": "<one or two sentences>", "subject": "<the email's subject>",
+   "stops": [["Sapporo", "Feb 19-21 · two nights"], ...],
+   "facts": [{"label": "Ski Days", "note": "Working Plan", "rows": [["Mon", "Grand Hirafu"], ...]}, ...]}
+Route descriptions and fact rows show in title case; each row's day is set apart from its place.
 Writes <out> (HTML) and <out>.txt (the plain-text part). Email-safe: tables and inline styles, buttons that work without
 images or web fonts, nothing remote to load (Gmail strips remote images anyway).
 """
@@ -25,8 +27,38 @@ def esc(s):
     return html.escape(str(s), quote=True)
 
 
-def label(text, color=DIM):
-    return f'<div style="font-family:{MONO};font-size:11px;letter-spacing:3px;text-transform:uppercase;color:{color};">{esc(text)}</div>'
+def label(text, color=DIM, note=""):
+    tail = (f' <span style="font-family:Georgia, serif;font-style:italic;font-size:13px;letter-spacing:.3px;text-transform:none;color:{MUTED};">'
+            f'({esc(note)})</span>') if note else ""
+    return f'<div style="font-family:{MONO};font-size:11px;letter-spacing:3px;text-transform:uppercase;color:{color};">{esc(text)}{tail}</div>'
+
+
+SMALL = {"a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of", "on", "or", "per", "the", "to", "via", "vs", "with"}
+
+
+def title_case(s):
+    """Like the page's titleCase: small words stay lower case mid-phrase (but not after a colon, a dash or a dot
+    separator), and only a lower-case first letter changes, so "AYA" and "3am" come through as written."""
+    ws, out = str(s).split(" "), []
+    for i, w in enumerate(ws):
+        parts = []
+        for j, p in enumerate(w.split("-")):
+            k = next((n for n, ch in enumerate(p) if ch.isalpha()), None)
+            if k is None or any(ch.isdigit() for ch in p[:k]) or not p[k].islower():
+                parts.append(p); continue
+            start = (i == 0 and j == 0) or (j == 0 and i > 0 and (ws[i - 1].endswith(":") or ws[i - 1] in ("·", "–", "—")))
+            small = "".join(ch for ch in p if ch.isalpha()).lower() in SMALL and not k and not start and i < len(ws) - 1
+            parts.append(p if small else p[:k] + p[k].upper() + p[k + 1:])
+        out.append("-".join(parts))
+    return " ".join(out)
+
+
+def day_rows(rows):
+    """[["Mon", "Grand Hirafu"], ...]: the day small and gold, the place in white, so the two read apart."""
+    return "".join(
+        f'<tr><td valign="top" style="padding:7px 12px 7px 0;width:44px;font-family:{MONO};font-size:12px;line-height:22px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:{GOLD};">{esc(d)}</td>'
+        f'<td valign="top" style="padding:7px 0;font-family:{SANS};font-size:16px;line-height:22px;color:{INK};">{esc(title_case(t))}</td></tr>'
+        for d, t in rows)
 
 
 def button(text, url, filled):
@@ -41,13 +73,22 @@ def render(trip, name, password):
     inv = trip["invite"]
     title, subtitle, dates = inv.get("title") or trip["title"].split(" ")[0], inv.get("subtitle", ""), inv.get("dates", "")
     pre = f"{dates}. The trip plan, the vote on where we eat, drink and go, and the password."
-    stops = "".join(
-        f'<tr><td valign="top" style="padding:10px 0;border-top:1px solid {LINE};font-family:{SERIF};font-size:21px;line-height:1.2;color:{INK};width:44%;">{esc(a)}</td>'
-        f'<td valign="top" style="padding:12px 0 10px 12px;border-top:1px solid {LINE};font-family:{SANS};font-size:14px;line-height:1.5;color:{MUTED};">{esc(b)}</td></tr>'
-        for a, b in inv.get("stops", []))
-    facts = "".join(
-        f'<tr><td style="padding:0 0 18px;">{label(a)}<div style="padding-top:6px;font-family:{SANS};font-size:15px;line-height:1.55;color:{INK};">{esc(b)}</div></td></tr>'
-        for a, b in inv.get("facts", []))
+    def stop(a, b):   # "Fri Feb 19 – Sun Feb 21 · two nights in Susukino": the dates small and gold above the title-cased rest
+        when, _, what = b.partition(" · ") if " · " in b else ("", "", b)
+        dates = "&nbsp;– ".join(esc(x).replace(" ", "&nbsp;") for x in when.split(" – "))   # a date never splits; a range breaks after its dash
+        top = f'<div style="font-family:{MONO};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:{GOLD};padding-bottom:3px;">{dates}</div>' if when else ""
+        return (f'<tr><td valign="top" style="padding:12px 0;border-top:1px solid {LINE};font-family:{SERIF};font-size:21px;line-height:1.2;color:{INK};width:40%;">{esc(a)}</td>'
+                f'<td valign="top" style="padding:12px 0 12px 12px;border-top:1px solid {LINE};">{top}'
+                f'<div style="font-family:{SANS};font-size:14.5px;line-height:1.5;color:{MUTED};">{esc(title_case(what))}</div></td></tr>')
+    stops = "".join(stop(a, b) for a, b in inv.get("stops", []))
+
+    def fact(f):   # {"label", "note", "rows": [[day, place], ...]}, or the older [label, text]
+        if isinstance(f, dict):
+            return (f'<tr><td style="padding:0 0 22px;">{label(f["label"], note=f.get("note", ""))}'
+                    f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:6px;">{day_rows(f.get("rows", []))}</table></td></tr>')
+        a, b = f
+        return f'<tr><td style="padding:0 0 18px;">{label(a)}<div style="padding-top:6px;font-family:{SANS};font-size:15px;line-height:1.55;color:{INK};">{esc(b)}</div></td></tr>'
+    facts = "".join(fact(f) for f in inv.get("facts", []))
     steps = [("Open the vote", "enter the password, then tap your name."),
              ("Mark each spot", "MUST, I WANT, MEH or NAH. The list re-ranks by the group's total."),
              ("Know a place?", "Suggest Spot: paste a Google Maps or Tabelog link, or just the name, and our agent will look it up and add it.")]
@@ -98,7 +139,9 @@ def render(trip, name, password):
     text = "\n".join([f"{trip['title']}: {title} {subtitle}, {dates}", "", f"Hi {name},", "", inv.get("intro", ""), "",
                       f"{inv.get('planLabel', 'Trip Plan')}: {inv['plan']}", f"{inv.get('voteLabel', trip['title'])}: {inv['vote']}",
                       f"Password: {password} (for the vote page; not secret, just keeps it private)", "", "The route:"]
-                     + [f"  {a}: {b}" for a, b in inv.get("stops", [])] + [""] + [f"{a}: {b}" for a, b in inv.get("facts", [])]
+                     + [f"  {a}: {title_case(b)}" for a, b in inv.get("stops", [])] + [""]
+                     + sum(([f"{f['label']}" + (f" ({f['note']})" if f.get("note") else "") + ":"] + [f"  {d}  {title_case(t)}" for d, t in f.get("rows", [])] + [""]
+                            if isinstance(f, dict) else [f"{f[0]}: {f[1]}", ""] for f in inv.get("facts", [])), [])
                      + ["", "How the vote works:"] + [f"  {n}. {a if a.endswith('?') else a + ':'} {b}" for n, (a, b) in enumerate(steps, 1)] + ["", "Corgi Capital"])
     return doc, text
 
@@ -118,3 +161,4 @@ if __name__ == "__main__":
     with open(o.out + ".txt", "w", encoding="utf-8") as f:
         f.write(text)
     print(f"wrote {o.out} ({len(doc):,} bytes) and {os.path.basename(o.out)}.txt")
+    print("subject:", trip["invite"].get("subject") or f"{trip['title']}: the plan, the vote and the password")
