@@ -203,7 +203,7 @@ function openSuggest(kind){
   const taste=kind==="taste", from=document.activeElement;
   const d=el("div","sg"); d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","sgTitle");
   d.innerHTML='<form class="sg-card" novalidate><h2 id="sgTitle">'+(taste?"Add to Group Tastes":"Suggest a Spot")+'</h2>'
-    +(taste?'<p class="sg-help">What does this group love, or avoid? Our agent folds it into the Group Tastes notes, which it also uses to judge new suggestions.</p>'
+    +(taste?'<p class="sg-help">What does this group love, or avoid? Our agent folds it into the Group Tastes notes, then goes looking for spots that fit and adds them under Group Tastes. It never removes any.</p>'
       +'<label class="sg-l" for="sgText">Tastes</label><textarea id="sgText" rows="3" maxlength="500" placeholder="Spicy is always a plus&#10;Alice doesn&#39;t eat raw fish"></textarea>'
       :'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Our agent looks each one up, writes its card and adds it under Group Tastes (events under Events). It takes a minute or two, and everyone sees it.</p>'
       +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;Or a name and the location"></textarea>')
@@ -567,8 +567,8 @@ function when(r){
   let hrs=xs.reduce((t,x)=>t+awake(x),0);
   REGIONS.forEach(o=>{ if(o!==r) stays(o).forEach(y=>{ if(xs.some(x=>x.s<=y.s&&y.e<=x.e&&x.e-x.s>y.e-y.s)) hrs-=awake(y) }) });
   const at=t=>{ const D=new Date(t); return [(D.getUTCMonth()+1)+"/"+D.getUTCDate(), clock(D.getUTCHours()+D.getUTCMinutes()/60)] };
-  const text=xs.map(x=>{ const [d1,c1]=at(x.s), [d2,c2]=at(x.e); return (d1+" "+c1+" - "+(d2===d1?"":d2+" ")+c2).replace(/ /g," ") }).join(", ");   // lines break only between stays
-  return {days:(Math.max(0,hrs)/14).toFixed(1), text};
+  const parts=xs.map(x=>{ const [d1,c1]=at(x.s), [d2,c2]=at(x.e); return [d1,c1,d2===d1?"":d2,c2] });   // [date, time, end date if another day, end time]
+  return {days:(Math.max(0,hrs)/14).toFixed(1), stays:parts};
 }
 // Each Tabelog score's place within its own region, best first: a thinly reviewed area scores lower across the board
 // than a big city, so the color compares like with like. t runs 0 (the region's lowest) to 1 (its best); ties share.
@@ -595,7 +595,9 @@ function render(){
       const s=el("section","region"); s.id="region-"+slug(g);
       const w=when(g), h=el("h2","sec",g);
       h.appendChild(el("small",null,its.length+(its.length===1?" Spot":" Spots")+(w?" · "+w.days+(w.days==="1.0"?" Day":" Days"):""))); s.appendChild(h);
-      if(w) s.appendChild(el("p","when",w.text));
+      if(w){ const p=el("p","when"); w.stays.forEach(([d1,c1,d2,c2],n)=>{ if(n) p.appendChild(el("span","sep",", "));
+        const st=el("span","stay"); st.append(el("span","d",d1)," ",el("span","t",c1),el("span","sep"," – "));
+        if(d2) st.append(el("span","d",d2)," "); st.appendChild(el("span","t",c2)); p.appendChild(st) }); s.appendChild(p) }
       const known=(TRIP.knownFor||{})[g]; if(known&&known.length) s.appendChild(el("p","known","Known for "+known.join(", ")));
       const parts=GROUPS.map(([k,label])=>[k,label,its.filter(i=>i.group===k)]);
       parts.push(["",TRIP.otherLabel||"More to Try",its.filter(i=>!GROUPS.some(([k])=>k===i.group))]);

@@ -203,7 +203,12 @@ body.lb-open{overflow:hidden}
 .ph-slot{position:absolute;top:10px;left:10px;z-index:2;padding:4px 10px;border-radius:999px;background:var(--must);color:#0b0b0b;font:700 12px var(--mono);letter-spacing:.03em}
 
 /* ---------- Region timing, section notes, currency ---------- */
-.when{margin:2px 0 8px;font:400 12px/1.7 var(--mono);letter-spacing:.03em;color:var(--gold-dim)}
+.when{margin:2px 0 8px;font:400 12px/1.8 var(--mono);letter-spacing:.03em;color:var(--gold-dim)}
+/* Dates bright and bold, times gold, so "2/19" and "1PM" read apart; a stay never breaks across lines. */
+.when .stay{white-space:nowrap}
+.when .d{color:var(--ink);font-weight:600}
+.when .t{color:var(--gold)}
+.when .sep{color:var(--faint)}
 .tastes-btn{display:inline-grid;place-items:center;width:28px;height:28px;margin-left:2px;padding:0;border:1px solid var(--gold-line);border-radius:50%;background:none;color:var(--gold-2);align-self:center;margin:-8px 0 -8px 2px}
 .tastes-btn:hover{border-color:var(--gold);background:var(--gold-wash)}
 .tastes-btn .ic{width:14px;height:14px}
