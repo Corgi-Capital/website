@@ -56,14 +56,14 @@ def check_page(page):
     bad_flags = [i.get("id") for i in items if "izakaya" in i and not isinstance(i["izakaya"], bool)]   # the Izakaya filter
     known = page.get("knownFor", {})
     bad_known = not isinstance(known, dict) or any(not isinstance(v, list) or not all(isinstance(x, str) for x in v) for v in known.values())
-    # time: per region, when the group is there, e.g. ["2/19 1PM-11PM", "2/22"] (a bare date is 9AM-11PM)
-    span = re.compile(r"^\d{1,2}/\d{1,2}( (\d{1,2}(:\d\d)?[AP]M)?-(\d{1,2}(:\d\d)?[AP]M)?)?$")
+    # time: per region, the stays there, e.g. ["2/19 1PM - 2/21 12PM", "2/20 10AM - 5PM", "2/22"] (a bare date is 9AM-11PM)
+    span = re.compile(r"^\d{1,2}/\d{1,2}(\s+\d{1,2}(:\d\d)?\s*[AP]M)?(\s*-\s*(\d{1,2}/\d{1,2}\s*)?(\d{1,2}(:\d\d)?\s*[AP]M)?)?$", re.I)
     when = page.get("time", {})
     bad_time = [r for r, v in (when.items() if isinstance(when, dict) else [("time", None)])
                 if r not in (page.get("regions") or []) or not isinstance(v, list) or not all(isinstance(x, str) and span.match(x) for x in v)]
     if bad or dupes or lost or bad_place or bad_photos or bad_labels or bad_slot or bad_flags or bad_known or bad_time:
         if bad_time:
-            raise SystemExit(f"time must map regions to lists like \"2/19 1PM-11PM\" or \"2/22\": bad {bad_time}")
+            raise SystemExit(f"time must map regions to lists like \"2/19 1PM - 2/21 12PM\" or \"2/22\": bad {bad_time}")
         raise SystemExit(f"bad item ids: {bad}; duplicate item ids: {dupes}; regions missing from 'regions': {lost}; "
                          f"bad placeId: {bad_place}; bad photos (positions 0-9): {bad_photos}; bad labels: {bad_labels} "
                          f"(allowed: {allowed}); bad slot (true or a label up to 40 characters): {bad_slot}; "

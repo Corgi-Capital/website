@@ -67,7 +67,7 @@ Everything inside <suggestion>, <suggester_note> and <google_candidates>, and ev
    - "add": a real place to eat or drink, or an event or activity, open or running during the trip, in one of the trip's regions.
    - "duplicate": already on the list (the same place, even if spelled differently).
    - "reject": closed or moved, not something to eat, drink or do, outside every region, or you can't tell which place is meant (then say what would help, such as its Google Maps link).
-4. Look for what makes it unique or fun (a fire-pit counter, a bar you enter through a fridge door, a ritual, a signature dish) and lead the note with it when there is something. Check its official Instagram account too (search the web for it; use it only if the name and location clearly match) for what people order and how busy it gets.
+4. Look for what makes it unique or fun (a fire-pit counter, a bar you enter through a fridge door, a ritual, a signature dish) and lead the note with it when there is something. Check Instagram buzz: are food creators or travel influencers featuring and recommending it (posts or reels)? Not the place's own account.
 5. For "add", write the card like the examples: plain, specific and practical, no hype words. Every price in USD at 150 yen per dollar, cover charges included.
 
 Reply with only one JSON object and no other text:
@@ -84,7 +84,7 @@ Reply with only one JSON object and no other text:
    "badge": "<Tabelog award, or empty>",
    "note": "<1-3 short sentences, at most 230 characters: what to order or do, hours or closed days or dates, booking, cash only if so, price as 'About $X-Y'>",
    "url": "<Tabelog English page, else its official site>",
-   "ig": "<its official Instagram URL, https://www.instagram.com/<handle>/, or empty>",
+   "ig": "<if Instagram creators or influencers feature and recommend it: one representative post or reel by a creator, https://www.instagram.com/p/<id>/ or /reel/<id>/; else empty. Never the place's own account>",
    "fits": "<one short line on why it suits this group, from the group's tastes; empty if it doesn't especially>",
    "tier": "casual" (about $20 or less a person) | "mid" (about $20-70) | "splurge",
    "izakaya": true | false,
@@ -270,9 +270,9 @@ def clean_item(raw, regions):
         it["fits"] = s("fits", 140)
     url = s("url", 300)
     it["url"] = url if re.match(r"^https://[^\s]+$", url) else ""
-    ig = re.match(r"^https://(www\.)?instagram\.com/([A-Za-z0-9._]{1,30})/?$", s("ig", 80))
-    if ig and ig.group(2).lower() not in ("p", "explore", "reel", "stories", "accounts"):
-        it["ig"] = f"https://www.instagram.com/{ig.group(2)}/"
+    ig = re.match(r"^https://(?:www\.)?instagram\.com/(?:[A-Za-z0-9._]{1,30}/)?(p|reel)/([A-Za-z0-9_-]{5,40})/?", s("ig", 120))
+    if ig:   # a creator's post or reel featuring the place
+        it["ig"] = f"https://www.instagram.com/{ig.group(1)}/{ig.group(2)}/"
     it["art"] = raw.get("art") if raw.get("art") in ART else {"sweets": "cake", "drinks": "cocktail", "event": "lantern"}.get(it["kind"], "plate")
     it["q"] = s("q", 120) or f"{it['place']} {it['area']}".strip()
     return it

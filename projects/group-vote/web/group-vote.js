@@ -455,6 +455,9 @@ function card(it,rank){
   if(it.izakaya) tags.appendChild(pill("izakaya","Izakaya"));
   if(it.kind==="sweets"||it.kind==="drinks") tags.appendChild(pill(it.kind,it.kind==="sweets"?"Sweets":"Drinks"));
   if(it.kind==="event") tags.appendChild(pill("event","Event"));
+  // IG: Instagram creators feature it; links to one of their posts (not the place's own account).
+  if(/^https:\/\/(www\.)?instagram\.com\/(p|reel)\//.test(it.ig||"")){ const a=el("a","tag ig"); a.innerHTML=icon("ig"); a.appendChild(document.createTextNode("IG"));
+    a.href=it.ig; a.target="_blank"; a.rel="noopener"; a.title="Featured by Instagram creators"; a.setAttribute("aria-label","Featured by Instagram creators: open a post"); tags.appendChild(a) }
   if(rank&&it.group==="specialty") tags.appendChild(pill("specialty","Regional Specialty","spec"));
   if(rank&&it.group==="tastes") tags.appendChild(pill("tastes","Group Taste","spec"));
   if(tags.firstChild) b.appendChild(tags);
@@ -468,8 +471,6 @@ function card(it,rank){
   if(it.url){ let h=""; try{ h=new URL(it.url).hostname }catch(e){}
     const a=el("a","lnk",/(^|\.)tabelog\.com$/.test(h)?"Tabelog":/tablecheck\.com$/.test(h)?"Book on TableCheck":"Website");
     a.href=it.url; a.target="_blank"; a.rel="noopener"; links.appendChild(a) }
-  if(/^https:\/\/(www\.)?instagram\.com\//.test(it.ig||"")){ const a=el("a","lnk ig"); a.innerHTML=icon("ig"); a.appendChild(document.createTextNode("IG"));
-    a.href=it.ig; a.target="_blank"; a.rel="noopener"; a.setAttribute("aria-label",it.place+" on Instagram"); links.appendChild(a) }
   if(it.placeId||it.q){ const g=el("a","lnk gmaps"); g.href=mapsLink(it); g.target="_blank"; g.rel="noopener"; g.dataset.id=it.id;
     g.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
     g.appendChild(gm()); g.setAttribute("aria-label",it.place+" on Google Maps: every photo and review"); links.appendChild(g) }
@@ -503,6 +504,8 @@ function patch(id){
 function refreshBar(){
   const n=ITEMS.filter(i=>typeof mineOf(i.id)==="number").length;
   $("#mine").textContent=me?"You've rated "+n+" of "+ITEMS.length:"Pick your name to vote";
+  const tc=$("#todoCount"); if(tc){ const left=ITEMS.length-n; tc.textContent=left>99?"99+":String(left); tc.hidden=!me||left<1;
+    tc.setAttribute("aria-label",left+" not rated yet") }
   $("#progress").style.width=(me&&ITEMS.length?100*n/ITEMS.length:0)+"%";
   status(""); renderBoard();
 }
@@ -531,19 +534,30 @@ function renderBoard(){
   if(!planned) B.appendChild(el("p","board-note","Once places get a dedicated slot on the itinerary, this shows how many of each person's picks made it. Every place stays on as an alternative."));
 }
 function refresh(){ Object.keys(cards).forEach(patch); refreshBar() }
-// When the group is in a region, from the trip's "time": {"Region": ["2/19 1PM-11PM", "2/22", "2/27 -11AM"]}. A day runs
-// 9AM-11PM unless a window says otherwise, and the region's days are its hours over 14, to the nearest tenth.
-// Consecutive dates with the same hours print as one range: "2/22 - 2/26 9AM - 11PM".
+// When the group is in a region, from the trip's "time": {"Region": ["2/19 1PM - 2/21 12PM", "2/20 10AM - 5PM", "2/22"]}.
+// Each entry is a stay from its start to its end ("2/20 10AM - 5PM" stays on one day; a missing time is 9AM to start
+// and 11PM to end, so a bare date is that whole day). A region's days count each day's 9AM-11PM inside its stays, over
+// 14 hours, to the nearest tenth; a shorter stay inside one (a day trip from the hotel) counts for its own region.
+const HR=36e5, DAY=864e5;
+const clock=v=>{ const H=Math.floor(v), M=Math.round((v-H)*60); return (H%12||12)+(M?":"+String(M).padStart(2,"0"):"")+(H>=12?"PM":"AM") };
+function stays(r){
+  const yr=+TRIP.year||new Date().getFullYear();
+  const hour=t=>{ const x=/^(\d{1,2})(?::(\d\d))?\s*([AP])M$/i.exec(t||""); return x?(+x[1])%12+(+(x[2]||0))/60+(/p/i.test(x[3])?12:0):null };
+  return ((TRIP.time||{})[r]||[]).map(s=>{
+    const m=/^(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}(?::\d\d)?\s*[AP]M))?(?:\s*-\s*(?:(\d{1,2})\/(\d{1,2}))?\s*(\d{1,2}(?::\d\d)?\s*[AP]M)?)?$/i.exec(String(s).trim());
+    if(!m) return null;
+    const a=hour(m[3]), b=hour(m[6]);
+    return {s:Date.UTC(yr,+m[1]-1,+m[2])+(a==null?9:a)*HR, e:Date.UTC(yr,(m[4]?+m[4]:+m[1])-1,m[5]?+m[5]:+m[2])+(b==null?23:b)*HR};
+  }).filter(x=>x&&x.e>x.s);
+}
+const awake=x=>{ let h=0; for(let d=Math.floor(x.s/DAY)*DAY; d<x.e; d+=DAY) h+=Math.max(0,Math.min(x.e,d+23*HR)-Math.max(x.s,d+9*HR)); return h/HR };
 function when(r){
-  const hour=t=>{ const x=/^(\d{1,2})(?::(\d\d))?([AP])M$/i.exec(t||""); if(!x) return null; return (+x[1])%12+(+(x[2]||0))/60+(/p/i.test(x[3])?12:0) };
-  const xs=((TRIP.time||{})[r]||[]).map(s=>{ const m=/^(\d{1,2})\/(\d{1,2})(?: (\S*)-(\S*))?$/.exec(String(s).trim()); if(!m) return null;
-    const a=hour(m[3]), b=hour(m[4]); return {m:+m[1], d:+m[2], a:a==null?9:a, b:b==null?23:b} }).filter(Boolean);
-  if(!xs.length) return null;
-  const hrs=xs.reduce((t,x)=>t+Math.max(0,x.b-x.a),0), yr=+TRIP.year||new Date().getFullYear();
-  const next=(p,x)=>new Date(yr,x.m-1,x.d)-new Date(yr,p.m2-1,p.d2)===864e5;
-  const clock=v=>{ const H=Math.floor(v), M=Math.round((v-H)*60); return (H%12||12)+(M?":"+String(M).padStart(2,"0"):"")+(H>=12&&H<24?"PM":"AM") };
-  const runs=[]; xs.forEach(x=>{ const p=runs[runs.length-1]; if(p&&p.a===x.a&&p.b===x.b&&next(p,x)){ p.m2=x.m; p.d2=x.d } else runs.push(Object.assign({m2:x.m,d2:x.d},x)) });
-  return {days:(hrs/14).toFixed(1), text:runs.map(x=>(x.m+"/"+x.d+(x.m2!==x.m||x.d2!==x.d?" - "+x.m2+"/"+x.d2:"")+" "+clock(x.a)+" - "+clock(x.b)).replace(/ /g," ")).join(", ")};   // lines break only between windows
+  const xs=stays(r); if(!xs.length) return null;
+  let hrs=xs.reduce((t,x)=>t+awake(x),0);
+  REGIONS.forEach(o=>{ if(o!==r) stays(o).forEach(y=>{ if(xs.some(x=>x.s<=y.s&&y.e<=x.e&&x.e-x.s>y.e-y.s)) hrs-=awake(y) }) });
+  const at=t=>{ const D=new Date(t); return [(D.getUTCMonth()+1)+"/"+D.getUTCDate(), clock(D.getUTCHours()+D.getUTCMinutes()/60)] };
+  const text=xs.map(x=>{ const [d1,c1]=at(x.s), [d2,c2]=at(x.e); return (d1+" "+c1+" - "+(d2===d1?"":d2+" ")+c2).replace(/ /g," ") }).join(", ");   // lines break only between stays
+  return {days:(Math.max(0,hrs)/14).toFixed(1), text};
 }
 // Each Tabelog score's place within its own region, best first: a thinly reviewed area scores lower across the board
 // than a big city, so the color compares like with like. t runs 0 (the region's lowest) to 1 (its best); ties share.
@@ -622,7 +636,9 @@ function mountBallot(){
       const s=document.getElementById("region-"+slug(g)); if(s) s.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) };
     jump.appendChild(a) });
   const F=$("#filters"), has={slotted:ITEMS.some(i=>i.slot), casual:ITEMS.some(i=>i.tier==="casual"), splurge:ITEMS.some(i=>i.tier==="splurge"), izakaya:ITEMS.some(i=>i.izakaya), treats:ITEMS.some(i=>i.kind==="sweets"||i.kind==="drinks")};
-  FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip"); b.innerHTML=icon(FILTER_ICON[f]); b.appendChild(document.createTextNode(label)); b.type="button"; b.dataset.f=f; F.appendChild(b) });
+  FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip"); b.innerHTML=icon(FILTER_ICON[f]); b.appendChild(document.createTextNode(label)); b.type="button"; b.dataset.f=f;
+    if(f==="todo"){ const c=el("span","cnt"); c.id="todoCount"; c.hidden=true; b.appendChild(c) }   // how many you haven't rated
+    F.appendChild(b) });
   F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; syncTools(); render() });
   $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render() });
   $("#lock").addEventListener("click",()=>{ ls("code",null); ls("me",null); location.reload() });

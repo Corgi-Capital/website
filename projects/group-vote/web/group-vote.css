@@ -66,6 +66,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .filters{display:flex;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .filters::-webkit-scrollbar{display:none}
 .filters .chip{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:4px 13px;font-size:13px}
+/* Needs Rating's count of spots you haven't rated: a notification-red badge in either palette. */
+.chip .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin:-2px -5px -2px 1px;padding:0 6px;border-radius:999px;background:#e5484d;color:#fff;font:700 11px/1 var(--mono);letter-spacing:0}
 .filters .chip[aria-pressed="true"]{border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2);font-weight:500}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-left:auto}
 .key{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font:400 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
@@ -204,7 +206,8 @@ body.lb-open{overflow:hidden}
 .subnote{margin:-4px 0 12px;max-width:72ch;color:var(--muted);font:italic 400 17px/1.4 var(--display)}
 .seg.cur{padding:2px}
 .seg.cur button{min-height:26px;padding:2px 11px;font:400 11px var(--mono);letter-spacing:.12em}
-.lnk.ig .ic{width:14px;height:14px}
+.tag.ig{border-color:var(--gold-line);color:var(--gold-2);text-decoration:none}
+.tag.ig:hover{border-color:var(--gold)}
 
 /* ---------- Suggest Spot ---------- */
 .sugg-btn{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:7px 16px 7px 13px;border:1px solid var(--gold);border-radius:999px;background:var(--gold-wash);color:var(--gold-2);font-size:14px;font-weight:500;white-space:nowrap}
