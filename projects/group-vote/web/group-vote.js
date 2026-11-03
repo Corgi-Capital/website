@@ -194,7 +194,7 @@ function openSuggest(){
   if(document.querySelector(".sg")) return;
   const d=el("div","sg"); d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","sgTitle");
   d.innerHTML='<form class="sg-card" novalidate><h2 id="sgTitle">Suggest a Spot</h2>'
-    +'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Claude looks each one up, writes its card and adds it under Group Tastes (events under Events). It takes a minute or two, and everyone sees it.</p>'
+    +'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Our agent looks each one up, writes its card and adds it under Group Tastes (events under Events). It takes a minute or two, and everyone sees it.</p>'
     +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;Or a name and the location"></textarea>'
     +'<p class="sg-msg" role="status" aria-live="polite"></p>'
     +'<div class="sg-row"><button type="button" class="sg-cancel">Cancel</button><button type="submit" class="sg-go">Suggest</button></div></form>';
@@ -217,7 +217,7 @@ function openSuggest(){
     go.disabled=true; msg.textContent="Sending…";
     const j=await post(tripPath+"/suggestions",{code,name:me,text:lines.join("\n")});
     go.disabled=false;
-    if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); toast(lines.length>1?"Claude is looking them up":"Claude is looking it up"); pace();
+    if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); toast(lines.length>1?"Our agent is looking them up":"Our agent is looking it up"); pace();
       const S=$("#sugs"); if(S&&S.getBoundingClientRect().top<0) S.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) }
     else if(j&&j.error==="code") lockOut(CHANGED);
     else msg.textContent=j&&j.error==="limit"?"That's today's limit for suggestions. Try again tomorrow.":j&&j.error==="text"?"One link or name per line, up to 5.":"Couldn't send that. Try again in a moment.";
