@@ -208,7 +208,7 @@ function setTrip(t){
   ALL=all; ITEMS=all.filter(i=>!i.stage&&!hiddenPick(i)); OPTS=all.filter(i=>i.stage&&!hiddenPick(i));   // OFF sections drop their AI picks
 }
 
-// ---------- Suggest Spot ----------
+// ---------- Suggestions ----------
 // Anyone can paste Google Maps links, Tabelog links or names; the server queues each and Claude (agent.py) looks it up,
 // writes its card and adds it, or says why not. The Updates panel, one line until it's opened, shows the last week of
 // suggestions, Group Tastes comments and removals; while any is still being looked up the page checks every 5 seconds.
@@ -256,7 +256,7 @@ function lastLine(s){
   return (s.status==="added"&&it?"Added "+it.place:(SUG_STATE[s.status]||s.status)+": "+sugWhat(s.text))+who;
 }
 function seeItem(id){
-  const pg=(byId(id)||{}).stage||"eats"; if(pg!==PAGE&&pageOk(pg)) setPage(pg,true);   // its own page first
+  const pg=pageOf((byId(id)||{}).stage||"eats"); if(pg!==PAGE&&pageOk(pg)) setPage(pg,true);   // its own page first
   if(ITEMS.some(i=>i.id===id)&&!visibleItems().some(i=>i.id===id)){ filter="all"; syncTools(); render() }
   const k=cards[id]; if(!k) return;
   k.c.scrollIntoView({behavior:REDUCED?"auto":"smooth",block:"center"}); k.c.classList.remove("flash"); void k.c.offsetWidth; k.c.classList.add("flash");
@@ -524,11 +524,11 @@ function openSuggest(kind){
   if(document.querySelector(".sg")) return;
   const from=document.activeElement;
   const d=el("div","sg"); d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","sgTitle");
-  d.innerHTML='<form class="sg-card" novalidate tabindex="-1"><h2 id="sgTitle">'+(taste?"Group Tastes":"Suggest a Spot")+'</h2>'
+  d.innerHTML='<form class="sg-card" novalidate tabindex="-1"><h2 id="sgTitle">'+(taste?"Group Tastes":"Make a Suggestion")+'</h2>'
     +(taste?'<p class="sg-help">What does this group love, or avoid? Our agent folds it into these notes, then goes looking for spots that fit and adds them under Group Tastes (it never removes any). On those cards, a thumbs up asks for more like it, and a thumbs down takes one off the list if no one has voted it above Meh.</p>'
       +'<label class="sg-l" for="sgText">Add to Group Tastes</label><textarea id="sgText" rows="3" maxlength="500" placeholder="Spicy is always a plus&#10;Alice doesn&#39;t eat raw fish"></textarea>'
-      :'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Our agent looks each one up, writes its card and puts it in the category that fits best. It takes a minute or two, and everyone sees it.</p>'
-      +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;Or a name and the location"></textarea>')
+      :'<p class="sg-help">A place to eat, drink or do, somewhere to stay for an open night, or a change to the places or dates: paste a Google Maps, Tabelog or hotel link, or just write it, one per line, up to 5. Our agent looks each one up and adds it where it belongs, for everyone to vote on. A locked part takes no suggestions.</p>'
+      +'<label class="sg-l" for="sgText">Suggestions</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;A hotel for the open night&#10;Or a name and the location"></textarea>')
     +'<p class="sg-msg" role="status" aria-live="polite"></p>'
     +'<div class="sg-row"><button type="button" class="sg-cancel">'+(taste?"Close":"Cancel")+'</button><button type="submit" class="sg-go">'+(taste?"Add":"Suggest")+'</button></div></form>';
   document.body.appendChild(d); document.body.classList.add("lb-open");
@@ -1058,28 +1058,31 @@ const spotsN=()=>ITEMS.length+(ITEMS.length===1?" Spot":" Spots");
 // Trip Locations, Trip Dates, Lodging and the places are each their own page, picked from the tabs in the bar (each
 // with a red count of what you haven't voted on there). The address bar carries it (#lodging), so a link opens that
 // page, and each device remembers the last one. A trip with only places has no tabs.
-const PAGES=[["map","Map","map"],["locations","Locations","pin"],["dates","Dates","dates"],["lodging","Lodging","stay"],["eats","","mid"]];
+const PAGES=[["map","Map","map"],["plan","Locations & Dates","dates"],["lodging","Lodging","stay"],["eats","","mid"]];
+// Each page's parts of the plan, and the page a part (or an old link to it) opens.
+const PAGE_PARTS={plan:["locations","dates"],lodging:["lodging"]}, pageOf=k=>k==="locations"||k==="dates"?"plan":k;
+const pageUnrated=k=>(PAGE_PARTS[k]||[]).reduce((n,s)=>n+unrated(s),0);
 let PAGE="eats";
-const pageOk=p=>p==="eats"||(p==="map"&&!!(TRIP.map&&TRIP.map.points))||(p==="locations"&&!!TRIP.locations)||(p==="dates"&&!!(TRIP.dates||OPTS.some(i=>i.stage==="dates")))||(p==="lodging"&&!!(TRIP.lodging||[]).length);
+const pageOk=p=>p==="eats"||(p==="map"&&!!(TRIP.map&&TRIP.map.points))||(p==="plan"&&!!(TRIP.locations||TRIP.dates||OPTS.some(i=>i.stage==="dates"||i.stage==="locations")))||(p==="lodging"&&!!(TRIP.lodging||[]).length);
 function startPage(){
-  const h=(location.hash||"").slice(1); if(PAGES.some(([k])=>k===h)&&pageOk(h)) return h;
-  const s=ls("page"); if(s&&pageOk(s)) return s;
-  const open=PAGES.find(([k])=>k!=="eats"&&k!=="map"&&pageOk(k)&&unrated(k)>0);   // a vote still waiting on you comes first
+  const h=pageOf((location.hash||"").slice(1)); if(PAGES.some(([k])=>k===h)&&pageOk(h)) return h;
+  const s=pageOf(ls("page")||""); if(s&&pageOk(s)) return s;
+  const open=PAGES.find(([k])=>k!=="eats"&&k!=="map"&&pageOk(k)&&pageUnrated(k)>0);   // a vote still waiting on you comes first
   return open?open[0]:"eats";
 }
 function setPage(k,quiet){
-  PAGE=pageOk(k)?k:"eats"; ls("page",PAGE);
+  k=pageOf(k); PAGE=pageOk(k)?k:"eats"; ls("page",PAGE);
   try{ history.replaceState(null,"",location.pathname+location.search+"#"+PAGE) }catch(e){}
   applyPage(); refreshBar();
-  if(!quiet){ const t=$(PAGE==="eats"?"#eats":"#stage-"+PAGE), b=$("#bar");   // from the page's top, if you'd scrolled past it
+  if(!quiet){ const t=$(PAGE==="eats"?"#eats":PAGE==="plan"?"#stage-locations":"#stage-"+PAGE), b=$("#bar");   // from the page's top, if you'd scrolled past it
     if(t){ const y=t.getBoundingClientRect().top+scrollY-(b?b.offsetHeight:0)-8; if(scrollY>y) window.scrollTo({top:Math.max(0,y)}) } }
 }
 function applyPage(){
   const eats=PAGE==="eats", map=PAGE==="map";
-  ["locations","dates","lodging"].forEach(k=>{ const s=document.getElementById("stage-"+k); if(s) s.hidden=PAGE!==k });
+  ["locations","dates","lodging"].forEach(k=>{ const s=document.getElementById("stage-"+k); if(s) s.hidden=pageOf(k)!==PAGE });
   const mp=$("#stage-map"); if(mp) mp.hidden=!map; if(map) ensureMap();   // the map loads the first time its page opens
   $("#stages").hidden=eats||map||!hasStages(); $("#eats").hidden=$("#list").hidden=!eats;
-  $("#eatsTools").hidden=$("#suggestBtn").hidden=!eats; if(!eats) showFilters(false);
+  $("#eatsTools").hidden=!eats; if(!eats) showFilters(false);   // Suggestion stays on every page: it goes where it belongs
   document.querySelectorAll("#tabs .tab").forEach(t=>t.setAttribute("aria-current",t.dataset.p===PAGE?"page":"false"));
 }
 function renderTabs(){
@@ -1091,13 +1094,14 @@ function renderTabs(){
     lodging:open?open+" to Decide":"All Booked", eats:spotsN()};
   // Trip Locations, Trip Dates and Lodging: a gold lock once settled, else a red count of the options on the ballot (or,
   // before any are listed, of the nights left to pick). Eats & Events: a red count of the spots you haven't rated.
-  const locked={locations:settled("locations"), dates:settled("dates"), lodging:settled("lodging")};
-  const left={locations:0, dates:dn, lodging:ln||open, eats:me?ITEMS.filter(i=>typeof mineOf(i.id)!=="number").length:0};
-  const what={dates:n=>n+(n===1?" date option":" date options"), lodging:n=>ln?n+(n===1?" lodging option":" lodging options"):n+(n===1?" night":" nights")+" left to pick",
+  const lo=OPTS.filter(i=>i.stage==="locations").length;
+  const locked={plan:settled("locations")&&settled("dates"), lodging:settled("lodging")};
+  const left={plan:(settled("locations")?0:lo)+(settled("dates")?0:dn), lodging:ln||open, eats:me?ITEMS.filter(i=>typeof mineOf(i.id)!=="number").length:0};
+  const what={plan:n=>n+(n===1?" suggested change":" suggested changes"), lodging:n=>ln?n+(n===1?" lodging option":" lodging options"):n+(n===1?" night":" nights")+" left to pick",
     eats:n=>n+" for you to rate"};
   PAGES.forEach(([k,label,ic])=>{ if(!pageOk(k)) return;
     const b=el("button","tab"); b.type="button"; b.dataset.p=k; b.setAttribute("aria-current",k===PAGE?"page":"false"); b.innerHTML=icon(ic);
-    const t=el("b"); if(k==="eats") t.textContent=TRIP.spotsTitle||"Eats & Events"; else { if(k!=="lodging") t.appendChild(el("span","tw","Trip ")); t.append(label) }
+    const t=el("b"); t.textContent=k==="eats"?TRIP.spotsTitle||"Eats & Events":label;
     b.appendChild(t); if(k==="eats") b.appendChild(el("small",null,note[k]));   // the plan's tabs: the badge says it
     if(locked[k]){ const c=el("span","tlock"); c.innerHTML=icon("lock"); c.setAttribute("role","img"); c.setAttribute("aria-label",k==="lodging"?"All booked":"Decided");
       c.title=k==="lodging"?"All booked":"Decided"; b.appendChild(c) }
@@ -1123,7 +1127,9 @@ function renderStages(){
       const known=(TRIP.knownFor||{})[r]; if(known&&known.length) b.appendChild(el("p","note","Known for "+known.join(", ")));
       li.appendChild(b); ul.appendChild(li) });
     s.appendChild(ul);
-    const lo=OPTS.filter(i=>i.stage==="locations"); if(lo.length){ const g=el("div","grid"); lo.forEach(i=>g.appendChild(card(i))); s.appendChild(g) }
+    const lo=OPTS.filter(i=>i.stage==="locations"); if(lo.length){
+      if(LO.decided){ const sh=el("h3","sub","Suggested Places"); sh.appendChild(el("small",null,String(lo.length))); s.appendChild(sh) }
+      const g=el("div","grid"); lo.forEach(i=>g.appendChild(card(i))); s.appendChild(g) }
     S.appendChild(s) }
   const D=TRIP.dates, dOpts=OPTS.filter(i=>i.stage==="dates");
   if(D||dOpts.length){
@@ -1146,7 +1152,9 @@ function renderStages(){
             li.append(el("div","fp-rt",l.route),el("div","fp-tm",l.times)); if(l.note) li.appendChild(el("div","fp-note",l.note)); ol.appendChild(li) });
           d.append(sm,ol); fl.appendChild(d) });
         s.appendChild(fl) } }
-    else if(dOpts.length){ const g=el("div","grid"); dOpts.forEach(i=>g.appendChild(card(i))); s.appendChild(g) }
+    if(dOpts.length){   // date options to vote on, or, once the dates are decided, suggested changes
+      if(D&&D.decided){ const sh=el("h3","sub","Suggested Changes"); sh.appendChild(el("small",null,String(dOpts.length))); s.appendChild(sh) }
+      const g=el("div","grid"); dOpts.forEach(i=>g.appendChild(card(i))); s.appendChild(g) }
     S.appendChild(s) }
   const L=TRIP.lodging||[];
   if(L.length){
@@ -1200,7 +1208,7 @@ function mountBallot(){
     +'<details class="sugs" id="sugs" hidden><summary></summary><ul class="sugs-l" aria-live="polite"></ul></details><div class="banner" id="setupBanner" hidden></div></header>'
     +'<div class="bar" id="bar"><div class="bar-in"><div class="who" id="whoWrap"><span class="label">I am</span><div class="chips" id="who"></div></div>'
     +'<div class="counts"><span id="mine"></span><span class="status" id="status"></span></div>'
-    +'<button type="button" class="sugg-btn" id="suggestBtn">'+icon("plus")+'Suggest<span class="sl"> Spot</span></button>'
+    +'<button type="button" class="sugg-btn" id="suggestBtn">'+icon("plus")+'Suggestion</button>'
     +'<button type="button" class="gear" id="gear" aria-label="Settings" title="Settings: sections, colors, prices, scoring">'+icon("gear")+'</button>'
     +'<i class="br" aria-hidden="true"></i><nav class="tabs" id="tabs" aria-label="Pages"></nav>'
     +'<div class="eats-tools" id="eatsTools"><div class="seg" id="sort" role="group" aria-label="Sort"><button type="button" data-s="region">Region</button><button type="button" data-s="rank">Ranking</button></div>'
@@ -1229,7 +1237,7 @@ function mountBallot(){
     F.appendChild(b) });
   F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; showFilters(false); syncTools(); render(); toEats() });
   $("#filterBtn").addEventListener("click",()=>showFilters($("#filters").hidden));
-  addEventListener("hashchange",()=>{ const h=location.hash.slice(1); if(h!==PAGE&&PAGES.some(([k])=>k===h)&&pageOk(h)) setPage(h,true) });
+  addEventListener("hashchange",()=>{ const h=pageOf(location.hash.slice(1)); if(h!==PAGE&&PAGES.some(([k])=>k===h)&&pageOk(h)) setPage(h,true) });
   $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render(); toEats() });
   $("#gear").addEventListener("click",openSettings);
   // Anchored sections stop just under the bar, whatever height it wraps to.
