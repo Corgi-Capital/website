@@ -44,7 +44,8 @@ const ICON={
   dates:'<rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3M5 9.2h1.4M7.3 9.2h1.4M9.6 9.2H11M5 11.4h1.4M7.3 11.4h1.4"/>',
   stay:'<path d="M1.5 3.5v10M1.5 10.5h13v3"/><circle cx="4.3" cy="8.3" r="1.4"/><path d="M7 10.5v-3h5a2.5 2.5 0 0 1 2.5 2.5v.5"/>',
   pin:'<path d="M8 14.2s4.6-4.4 4.6-7.7a4.6 4.6 0 0 0-9.2 0c0 3.3 4.6 7.7 4.6 7.7z"/><circle cx="8" cy="6.5" r="1.7"/>',
-  gear:'<circle cx="8" cy="8" r="2.1"/><path d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.5 3.5l1.2 1.2M11.3 11.3l1.2 1.2M3.5 12.5l1.2-1.2M11.3 4.7l1.2-1.2"/><circle cx="8" cy="8" r="4.4"/>'
+  gear:'<circle cx="8" cy="8" r="2.1"/><path d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.5 3.5l1.2 1.2M11.3 11.3l1.2 1.2M3.5 12.5l1.2-1.2M11.3 4.7l1.2-1.2"/><circle cx="8" cy="8" r="4.4"/>',
+  funnel:'<path d="M2.5 3.5h11l-4.2 5v4.3l-2.6 1.2V8.5z"/>'
 };
 const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",treats:"sweets",events:"event",todo:"todo"};
 const icon=k=>ICON[k]?'<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">'+ICON[k]+'</svg>':"";
@@ -232,6 +233,7 @@ function lastLine(s){
   return (s.status==="added"&&it?"Added "+it.place:(SUG_STATE[s.status]||s.status)+": "+sugWhat(s.text))+who;
 }
 function seeItem(id){
+  const pg=(byId(id)||{}).stage||"eats"; if(pg!==PAGE&&pageOk(pg)) setPage(pg,true);   // its own page first
   if(ITEMS.some(i=>i.id===id)&&!visibleItems().some(i=>i.id===id)){ filter="all"; syncTools(); render() }
   const k=cards[id]; if(!k) return;
   k.c.scrollIntoView({behavior:REDUCED?"auto":"smooth",block:"center"}); k.c.classList.remove("flash"); void k.c.offsetWidth; k.c.classList.add("flash");
@@ -598,11 +600,14 @@ function patch(id){
 }
 function refreshBar(){
   const n=ITEMS.filter(i=>typeof mineOf(i.id)==="number").length;
-  $("#mine").textContent=me?"You've rated "+n+" of "+ITEMS.length:"Pick your name to vote";
   const tc=$("#todoCount"); if(tc){ const left=ITEMS.length-n; tc.textContent=left>99?"99+":String(left); tc.hidden=!me||left<1;
     tc.setAttribute("aria-label",left+" not rated yet") }
-  $("#progress").style.width=(me&&ITEMS.length?100*n/ITEMS.length:0)+"%";
-  status(""); renderBoard(); renderSteps(); leaders();
+  // The count and progress are for the page you're on.
+  const pool=PAGE==="eats"?ITEMS:OPTS.filter(i=>i.stage===PAGE&&(PAGE!=="lodging"||openStay(i.stay))), m=pool.filter(i=>typeof mineOf(i.id)==="number").length;
+  $("#mine").textContent=!me?"Pick your name to vote":pool.length?"You've rated "+m+" of "+pool.length:"Nothing to vote on here";
+  $("#progress").style.width=(me&&pool.length?100*m/pool.length:0)+"%";
+  const H=$("#hello"); if(H){ H.textContent=""; if(!me) H.appendChild(el("p","callout","Pick your name in the bar above to start voting. Everyone's votes show on each card.")) }
+  status(""); renderBoard(); renderTabs(); leaders();
 }
 // The scoreboard: per person, how many of their MUSTs, I WANTs, MEHs and NAHs got a dedicated slot on the itinerary
 // ("slot" on an item in the trip file; every other place stays on as an alternative). Before any slot is set, it just
@@ -680,7 +685,7 @@ function render(){
   renderStages();
   const lv=hasStages();   // under Trip Dates and Lodging, the regions are a level down
   L.textContent="";
-  if(!me&&!lv) L.appendChild(el("p","callout","Pick your name in the bar above to start voting. Everyone's votes show on each card."));
+
   const xs=visibleItems();
   if(!xs.length) L.appendChild(el("p","empty",filter==="todo"?"You've rated everything. Nice.":"Nothing here yet."));
   else if(sortMode==="region"){
@@ -705,7 +710,7 @@ function render(){
     xs.slice().sort((a,b)=>totals(b.id).t-totals(a.id).t||totals(b.id).n-totals(a.id).n).forEach((i,n)=>grid.appendChild(card(i,n+1)));
     L.appendChild(grid);
   }
-  refreshBar();
+  applyPage(); refreshBar();
 }
 function cast(id,v){
   if(!me) return nudgeWho();
@@ -755,25 +760,53 @@ function offTag(h,k){ if(k&&!secOn(k)){ const t=el("span","off-tag","Suggestions
 const openStay=id=>(TRIP.lodging||[]).some(x=>x.id===id&&x.status!=="booked");
 const unrated=st=>me?OPTS.filter(i=>i.stage===st&&(st!=="lodging"||openStay(i.stay))&&typeof mineOf(i.id)!=="number").length:0;
 const spotsN=()=>ITEMS.length+(ITEMS.length===1?" Spot":" Spots");
-function renderSteps(){
-  const S=$("#steps"); if(!S) return;
-  S.textContent=""; S.hidden=!hasStages(); if(S.hidden) return;
-  const step=(id,ic,label,note,n)=>{ const a=el("a","step"); a.href="#"+id; a.innerHTML=icon(ic); a.append(el("b",null,label),el("small",null,note));
-    if(n){ const c=el("span","cnt",String(n)); c.title=n+" for you to vote on"; a.appendChild(c) }
-    a.onclick=e=>{ e.preventDefault(); const t=document.getElementById(id); if(t) t.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) };
-    S.appendChild(a) };
+// ---------- Pages ----------
+// Trip Locations, Trip Dates, Lodging and the places are each their own page, picked from the tabs in the bar (each
+// with a red count of what you haven't voted on there). The address bar carries it (#lodging), so a link opens that
+// page, and each device remembers the last one. A trip with only places has no tabs.
+const PAGES=[["locations","Locations","pin"],["dates","Dates","dates"],["lodging","Lodging","stay"],["eats","","mid"]];
+let PAGE="eats";
+const pageOk=p=>p==="eats"||(p==="locations"&&!!TRIP.locations)||(p==="dates"&&!!(TRIP.dates||OPTS.some(i=>i.stage==="dates")))||(p==="lodging"&&!!(TRIP.lodging||[]).length);
+function startPage(){
+  const h=(location.hash||"").slice(1); if(PAGES.some(([k])=>k===h)&&pageOk(h)) return h;
+  const s=ls("page"); if(s&&pageOk(s)) return s;
+  const open=PAGES.find(([k])=>k!=="eats"&&pageOk(k)&&unrated(k)>0);   // a vote still waiting on you comes first
+  return open?open[0]:"eats";
+}
+function setPage(k,quiet){
+  PAGE=pageOk(k)?k:"eats"; ls("page",PAGE);
+  try{ history.replaceState(null,"",location.pathname+location.search+"#"+PAGE) }catch(e){}
+  applyPage(); refreshBar();
+  if(!quiet){ const t=$(PAGE==="eats"?"#eats":"#stage-"+PAGE), b=$("#bar");   // from the page's top, if you'd scrolled past it
+    if(t){ const y=t.getBoundingClientRect().top+scrollY-(b?b.offsetHeight:0)-8; if(scrollY>y) window.scrollTo({top:Math.max(0,y)}) } }
+}
+function applyPage(){
+  const eats=PAGE==="eats";
+  ["locations","dates","lodging"].forEach(k=>{ const s=document.getElementById("stage-"+k); if(s) s.hidden=PAGE!==k });
+  $("#stages").hidden=eats||!hasStages(); $("#eats").hidden=$("#list").hidden=!eats;
+  $("#eatsTools").hidden=$("#suggestBtn").hidden=!eats; if(!eats) showFilters(false);
+  document.querySelectorAll("#tabs .tab").forEach(t=>t.setAttribute("aria-current",t.dataset.p===PAGE?"page":"false"));
+}
+function renderTabs(){
+  const T=$("#tabs"); if(!T) return; T.textContent="";
+  T.hidden=PAGES.filter(([k])=>pageOk(k)).length<2; if(T.hidden) return;
   const D=TRIP.dates, dn=OPTS.filter(i=>i.stage==="dates").length, L=TRIP.lodging||[], open=L.filter(x=>x.status!=="booked").length;
-  if(TRIP.locations) step("stage-locations","pin","Trip Locations",TRIP.locations.decided?"Decided":"Vote",0);
-  if(D||dn) step("stage-dates","dates","Trip Dates",D&&D.decided?"Decided":dn+(dn===1?" Option":" Options"),D&&D.decided?0:unrated("dates"));
-  if(L.length) step("stage-lodging","stay","Lodging",open?open+" to Decide":"All Booked",unrated("lodging"));
-  step("eats","mid",TRIP.spotsTitle||"Eats & Events",spotsN(),0);
+  const note={locations:TRIP.locations&&TRIP.locations.decided?"Decided":"Vote", dates:D&&D.decided?"Decided":dn+(dn===1?" Option":" Options"),
+    lodging:open?open+" to Decide":"All Booked", eats:spotsN()};
+  const left={locations:unrated("locations"), dates:D&&D.decided?0:unrated("dates"), lodging:unrated("lodging"), eats:me?ITEMS.filter(i=>typeof mineOf(i.id)!=="number").length:0};
+  PAGES.forEach(([k,label,ic])=>{ if(!pageOk(k)) return;
+    const b=el("button","tab"); b.type="button"; b.dataset.p=k; b.setAttribute("aria-current",k===PAGE?"page":"false"); b.innerHTML=icon(ic);
+    const t=el("b"); if(k==="eats") t.textContent=TRIP.spotsTitle||"Eats & Events"; else { if(k!=="lodging") t.appendChild(el("span","tw","Trip ")); t.append(label) }
+    b.append(t,el("small",null,note[k]));
+    if(left[k]){ const c=el("span","cnt",left[k]>99?"99+":String(left[k])); c.title=left[k]+" for you to vote on"; b.appendChild(c) }
+    b.onclick=()=>setPage(k); T.appendChild(b) });
 }
 function renderStages(){
   const S=$("#stages"), H=$("#eatsH"); if(!S) return;
   S.textContent=""; S.hidden=!hasStages();
   if(H){ H.hidden=S.hidden; H.textContent=TRIP.spotsTitle||"Eats & Events"; H.appendChild(el("small",null,spotsN())) }
   if(S.hidden) return;
-  if(!me) S.appendChild(el("p","callout","Pick your name in the bar above to start voting. Everyone's votes show on each card."));
+
   const LO=TRIP.locations;
   if(LO){   // where the trip goes: each region with its stays and what it's known for
     const s=el("section","stage"); s.id="stage-locations";
@@ -839,22 +872,28 @@ function leaders(){
 function syncTools(){
   document.querySelectorAll("#sort button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.s===sortMode)));
   document.querySelectorAll("#filters button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.f===filter)));
+  const fc=$("#fcur"); if(fc) fc.textContent=filter==="all"?"":(FILTERS.find(([f])=>f===filter)||["",""])[1];   // the filter in use, on the button
+  $("#filterBtn").classList.toggle("on",filter!=="all");
   $("#jump").hidden=sortMode!=="region";
 }
+// The filters fold away behind their button in the bar; picking one folds them again.
+function showFilters(open){ $("#filters").hidden=!open; $("#filterBtn").setAttribute("aria-expanded",String(open)) }
 function mountBallot(){
   const v=el("div","gv-ballot");
   v.innerHTML='<header class="hd"><div class="hd-top"><a class="mark" href="/">Corgi Capital</a>'
     +'<button type="button" class="lock" id="lock" title="Forget the password on this device">Lock</button></div>'
-    +'<h1 id="title"></h1><p id="intro"></p><nav class="steps" id="steps" aria-label="The votes" hidden></nav>'
+    +'<h1 id="title"></h1><p id="intro"></p>'
     +'<details class="sugs" id="sugs" hidden><summary></summary><ul class="sugs-l" aria-live="polite"></ul></details><div class="banner" id="setupBanner" hidden></div></header>'
-    +'<div class="bar" id="bar"><div class="bar-in"><div class="bar-row"><div class="who" id="whoWrap"><span class="label">I am</span><div class="chips" id="who"></div></div>'
-    +'<div class="bar-r"><div class="counts"><span id="mine"></span><span class="status" id="status"></span></div>'
-    +'<button type="button" class="sugg-btn" id="suggestBtn">'+icon("plus")+'Suggest Spot</button>'
-    +'<button type="button" class="gear" id="gear" aria-label="Settings" title="Settings: sections, colors, prices, scoring">'+icon("gear")+'</button></div></div>'
-    +'<div class="bar-row bar-tools"><div class="seg" id="sort" role="group" aria-label="Sort"><button type="button" data-s="region">Region</button><button type="button" data-s="rank">Ranking</button></div>'
-    +'<div class="filters" id="filters" role="group" aria-label="Show"></div></div></div>'
+    +'<div class="bar" id="bar"><div class="bar-in"><div class="who" id="whoWrap"><span class="label">I am</span><div class="chips" id="who"></div></div>'
+    +'<div class="counts"><span id="mine"></span><span class="status" id="status"></span></div>'
+    +'<button type="button" class="sugg-btn" id="suggestBtn">'+icon("plus")+'Suggest<span class="sl"> Spot</span></button>'
+    +'<button type="button" class="gear" id="gear" aria-label="Settings" title="Settings: sections, colors, prices, scoring">'+icon("gear")+'</button>'
+    +'<i class="br" aria-hidden="true"></i><nav class="tabs" id="tabs" aria-label="Pages"></nav>'
+    +'<div class="eats-tools" id="eatsTools"><div class="seg" id="sort" role="group" aria-label="Sort"><button type="button" data-s="region">Region</button><button type="button" data-s="rank">Ranking</button></div>'
+    +'<button type="button" class="fbtn" id="filterBtn" aria-expanded="false" aria-controls="filters" title="Filters">'+icon("funnel")+'<span class="fl">Filters</span><span class="fcur" id="fcur"></span></button></div>'
+    +'<div class="filters" id="filters" role="group" aria-label="Show" hidden></div></div>'
     +'<div class="progress" aria-hidden="true"><i id="progress"></i></div></div>'
-    +'<div class="stages" id="stages" hidden></div>'
+    +'<div class="hello" id="hello"></div><div class="stages" id="stages" hidden></div>'
     +'<section class="eats" id="eats"><h2 class="stage-h" id="eatsH" hidden></h2><nav class="jump" id="jump" aria-label="Jump to"></nav><section class="board" id="board" aria-label="Scoreboard"></section></section>'
     +'<main class="list" id="list"></main>'
     +'<div class="toast" id="toast" role="status" aria-live="polite"></div>';
@@ -872,7 +911,9 @@ function mountBallot(){
   FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip"); b.innerHTML=icon(FILTER_ICON[f]); b.appendChild(document.createTextNode(label)); b.type="button"; b.dataset.f=f;
     if(f==="todo"){ const c=el("span","cnt"); c.id="todoCount"; c.hidden=true; b.appendChild(c) }   // how many you haven't rated
     F.appendChild(b) });
-  F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; syncTools(); render(); toEats() });
+  F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; showFilters(false); syncTools(); render(); toEats() });
+  $("#filterBtn").addEventListener("click",()=>showFilters($("#filters").hidden));
+  addEventListener("hashchange",()=>{ const h=location.hash.slice(1); if(h!==PAGE&&PAGES.some(([k])=>k===h)&&pageOk(h)) setPage(h,true) });
   $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render(); toEats() });
   $("#gear").addEventListener("click",openSettings);
   // Anchored sections stop just under the bar, whatever height it wraps to.
@@ -1034,6 +1075,7 @@ function boot(){
     me=ls("me"); if(TRAVELERS.indexOf(me)<0) me=null;
     ballots=j.ballots||{}; THUMBS=j.thumbs||{};
     isOwner=j.owner===true; if(OWNER&&!isOwner){ OWNER=""; ls("owner",null) }   // a wrong or old owner code is forgotten
+    PAGE=startPage();
     const swap=()=>{
       stopField(); gate.remove(); document.body.classList.remove("gv-locked"); window.scrollTo(0,0);
       mountBallot(); renderWho(); render(); renderSugs(); pace();

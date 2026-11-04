@@ -39,29 +39,60 @@ button{font:inherit;color:inherit;cursor:pointer}
 .jump a:hover{background:var(--gold-wash)}
 .banner{margin-top:16px;padding:12px 14px;border:1px solid var(--gold-line);border-radius:10px;background:var(--gold-wash);font-size:14px}
 .banner[hidden]{display:none}
-/* The votes in planning order (Trip Dates, Lodging, Eats & Events), each a jump to its section, with a red count of
-   options you haven't voted on. */
-.steps{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
-.steps[hidden]{display:none}
-.step{display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:7px 15px 7px 13px;border:1px solid var(--gold-line);border-radius:999px;color:var(--ink);font-size:14.5px;text-decoration:none}
-.step .ic{width:15px;height:15px;color:var(--gold-2)}
-.step b{font-weight:500}
-.step small{font:12px var(--mono);letter-spacing:.06em;color:var(--gold-dim)}
-.step:hover{background:var(--gold-wash)}
-.step .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-right:-5px;padding:0 6px;border-radius:999px;background:#e5484d;color:#fff;font:700 11px/1 var(--mono)}
 
 /* ---------- Sticky bar: who's voting and how far along ---------- */
 .bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:rgba(11,11,11,.88);-webkit-backdrop-filter:saturate(1.2) blur(12px);backdrop-filter:saturate(1.2) blur(12px);border-block:1px solid var(--line)}
-/* Two rows: who's voting, the count, Suggest Spot and Settings; then sort and the filters (one line, scrolls sideways). */
-.bar-in{max-width:1200px;margin:0 auto;padding:12px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));display:grid;gap:10px}
-.bar-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;min-width:0}
-.bar-tools{flex-wrap:nowrap;gap:10px}
-.bar-tools .seg{flex:none}
-.bar-tools .filters{flex:1 1 0;min-width:0}
+/* The bar wraps one row of parts, ordered here: names, the count, Suggest Spot and Settings; then the page tabs, sort and
+   the filter button; then the filters when opened. Phones drop the count (the progress line stays) and run names and
+   Settings; the tabs; sort, filters and Suggest. */
+.bar-in{max-width:1200px;margin:0 auto;padding:12px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px}
+.bar-in .who{order:1;flex:1 1 auto;min-width:0}
+.bar-in .counts{order:2}
+.bar-in .sugg-btn{order:3}
+.bar-in .gear{order:4}
+.bar-in .br{order:5;flex-basis:100%;height:0}
+.bar-in .tabs{order:6;flex:1 1 auto}
+.bar-in .eats-tools{order:7}
+.bar-in .filters{order:8;flex-basis:100%}
 .gear{flex:none;display:inline-grid;place-items:center;width:40px;height:40px;padding:0;border:1px solid var(--gold-line);border-radius:50%;background:none;color:var(--gold-2)}
 .gear .ic{width:19px;height:19px}
 .gear:hover{border-color:var(--gold);background:var(--gold-wash)}
-@media (max-width:640px){.bar-row .bar-r{flex:1 1 100%;gap:10px;margin-left:0}.bar-row .counts{margin-right:auto}}   /* phones: names, then count, Suggest and Settings */
+.tabs{display:flex;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{display:inline-flex;flex:none;align-items:center;gap:7px;min-height:40px;padding:6px 14px 6px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:14px;white-space:nowrap}
+.tab .ic{width:15px;height:15px;color:var(--gold-dim)}
+.tab b{font-weight:500}
+.tab small{font:11px var(--mono);letter-spacing:.06em;color:var(--faint)}
+.tab:hover{border-color:var(--gold-line);color:var(--ink)}
+.tab[aria-current="page"]{border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2)}
+.tab[aria-current="page"] .ic{color:var(--gold-2)}
+.tab[aria-current="page"] b{font-weight:700}
+.tab .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-right:-5px;padding:0 6px;border-radius:999px;background:#e5484d;color:#fff;font:700 11px/1 var(--mono)}
+.eats-tools{display:flex;align-items:center;gap:8px}
+.fbtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:5px 13px 5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:13.5px;white-space:nowrap}
+.fbtn .ic{width:14px;height:14px}
+.fbtn:hover,.fbtn[aria-expanded="true"]{border-color:var(--gold-line);color:var(--ink)}
+.fbtn.on{border-color:var(--gold);color:var(--gold-2)}
+.fcur:not(:empty)::before{content:": "}
+.fcur{font-weight:600}
+.hello{max-width:1200px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px))}
+.hello:empty{display:none}
+@media (max-width:640px){
+  .bar-in .counts,.bar-in .label,.tab .tw,.tab small,.sugg-btn .sl,.fbtn .fl,.fcur{display:none}
+  .bar-in .gear{order:2}
+  .bar-in .br{order:3}
+  .bar-in .tabs{order:4;flex-basis:100%}
+  .bar-in .eats-tools{order:5;flex:1 1 auto}
+  .bar-in .sugg-btn{order:6}
+  .bar-in .filters{order:7}
+  .fbtn{padding:5px 11px}
+  /* the tabs as a phone tab bar: four equal tabs, icon over label, the red count in the corner */
+  .tabs{gap:5px;overflow:visible}
+  .tab{position:relative;flex:1 1 0;min-width:0;flex-direction:column;justify-content:center;gap:3px;min-height:54px;padding:6px 3px 5px;border-radius:12px;font-size:11px;line-height:1.15;text-align:center;white-space:normal}
+  .tab .ic{width:17px;height:17px}
+  .tab b{font-weight:500}
+  .tab .cnt{position:absolute;top:3px;right:4px;min-width:17px;height:17px;margin:0;padding:0 4px;font-size:10px}
+}
 .who .chip{min-height:40px;padding:7px 17px;font-size:15px}
 .who{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-radius:999px}
 .who.nudge{animation:gvNudge .9s ease 2}
@@ -71,7 +102,6 @@ button{font:inherit;color:inherit;cursor:pointer}
 .chip{min-height:34px;padding:5px 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:14px;white-space:nowrap}
 .chip:hover{border-color:var(--gold-line);color:var(--ink)}
 .chip[aria-pressed="true"]{border-color:var(--gold);background:var(--gold);color:#0b0b0b;font-weight:700}
-.bar-r{display:flex;align-items:center;gap:14px;margin-left:auto}   /* "You've rated" and Suggest Spot stay together, right side */
 .counts{display:flex;gap:14px;font:400 12px var(--mono);letter-spacing:.06em;color:var(--faint);white-space:nowrap}
 .status:empty{display:none}
 .status{color:var(--meh)}
