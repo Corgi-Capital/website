@@ -23,6 +23,9 @@ Routes
                                        review and add it. With AGENT_HOLD=owner, only suggestions sent with the owner's code
                                        run at once and anyone else's are "held" until the owner OKs them. 429 "limit" past
                                        the traveler's daily cap.
+  POST /trips/{trip}/sections          body {"code", "name", "section", "lock"} -> {"ok": true, "locks": {...}, "suggestions":
+                                       [...]}: locks or unlocks a part of the plan (locations, dates, lodging) for everyone;
+                                       a locked part takes no suggestions. Logged. The page data carries "locks".
   POST /trips/{trip}/sections          body {"code", "name", "section", "on"} -> {"ok": true, "sections": {...},
                                        "suggestions": [...]}. Turns a section's AI picks on, or off (suggestions only), or
                                        the trip's Google photos ("photos"), for everyone; logged in the updates. The page
@@ -39,7 +42,8 @@ Routes
   POST /trips/{trip}/approve           body {"code", "owner", "ids", "run"} -> {"ok": true, "suggestions": [...]}. The owner
                                        runs held suggestions (run: true) or skips them (run: false). 403 "owner" without the
                                        owner's code.
-  GET  /trips/{trip}/map?code=...      -> {"ok": true, "points": {place id: [lat, lng]}}: each place's coordinates, for the
+  GET  /trips/{trip}/map?code=...      -> {"ok": true, "points": {place id: [lat, lng]}, "left": n}: each place's coordinates (n still
+                                       to look up: ask again), for the
                                        Trip Map. Looked up from Google by place id (location only) and kept up to 25 days.
   GET  /usage                          -> {"ok": true, "month": "YYYY-MM", "used": {...}, "limits": {...}}
   POST /usage                          body {"trip", "code", "kinds": ["search", "photo", "map"]} -> {"ok": true}; 403 "code" without a
@@ -53,7 +57,7 @@ Table layout (single table, on-demand)
                                            hash), page (page data as JSON), rev, created, updated
   pk = "trip#<trip>", sk = "ballot#<name>" votes {item_id: int}, up [item ids with this traveler's thumbs up], updated
   pk = "trip#<trip>", sk = "sections"      s_<section> (bool): a section (or "photos") flipped on the page; wins over the trip
-                                           file's "sections"
+                                           file's "sections". l_<part> (bool): a part of the plan locked or unlocked on the page
   pk = "trip#<trip>", sk = "goals"         primary, secondary [..], by, updated: the squad's goals as edited on the page; wins over
                                            the trip file's "goals"
   pk = "trip#<trip>", sk = "categories"    list [{key, label, about, thumbs}], by, updated: the categories as edited on the page;
@@ -217,7 +221,8 @@ def _geo(trip, page):
     kept = {k: v for k, v in have.items() if k in want}
     if kept != old:
         TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": "geo", "points": kept, "updated": now})
-    return {k: [float(v[0]), float(v[1])] for k, v in kept.items()}
+    left = sum(1 for p in want if p not in kept and PLACE_ID_RE.match(p))   # still to look up: the page asks again
+    return {k: [float(v[0]), float(v[1])] for k, v in kept.items()}, left
 
 
 def _resp(status, body):
@@ -275,6 +280,7 @@ def _page(trip, meta):
     page["categories"] = _categories(trip, page)
     page["sections"] = _sections(trip, page, page["categories"])
     page["goals"] = _goals(trip, page)
+    page["locks"] = _locks(trip, page)
     doc = _tastes(trip)
     if doc:   # the doc, once anyone has commented, wins over the trip file's starting text
         page.update(tastes=doc.get("brief", page.get("tastes", "")), tastesLine=doc.get("line", page.get("tastesLine", "")))
@@ -400,6 +406,17 @@ def _set_categories(trip, meta, body):
     return _resp(200, {"ok": True, "categories": out, "suggestions": _suggestions(trip)})
 
 
+def _locks(trip, page):
+    """Which parts of the plan are locked (they take no suggestions): {"locations", "dates", "lodging": bool}. Each starts
+    from the trip (Trip Locations or Trip Dates decided; every night booked), and a lock or unlock on the page wins."""
+    stays = page.get("lodging") or []
+    on = {"locations": bool((page.get("locations") or {}).get("decided")), "dates": bool((page.get("dates") or {}).get("decided")),
+          "lodging": bool(stays) and all(isinstance(x, dict) and x.get("status") == "booked" for x in stays)}
+    row = TABLE.get_item(Key={"pk": f"trip#{trip}", "sk": "sections"}, ConsistentRead=True).get("Item") or {}
+    on.update({k: bool(row[f"l_{k}"]) for k in STAGES if f"l_{k}" in row})
+    return on
+
+
 def _goals(trip, page):
     """The squad's goals: {"primary": "...", "secondary": [...]}. The page's edit wins over the trip file's "goals"."""
     row = TABLE.get_item(Key={"pk": f"trip#{trip}", "sk": "goals"}, ConsistentRead=True).get("Item")
@@ -437,6 +454,17 @@ def _set_section(trip, meta, body):
     name, key, on = body.get("name"), body.get("section"), body.get("on")
     if name not in meta.get("travelers", []):
         return _resp(400, {"ok": False, "error": "name"})
+    if "lock" in body:   # a part of the plan, locked or unlocked
+        lock = body.get("lock")
+        if key not in STAGES or not isinstance(lock, bool):
+            return _resp(400, {"ok": False, "error": "section"})
+        now = int(time.time())
+        TABLE.update_item(Key={"pk": f"trip#{trip}", "sk": "sections"}, UpdateExpression="SET #k = :v, updated = :u",
+                          ExpressionAttributeNames={"#k": f"l_{key}"}, ExpressionAttributeValues={":v": lock, ":u": now})
+        TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": f"sugg#{int(time.time() * 1000):013d}-{os.urandom(2).hex()}", "by": name,
+                             "text": key, "kind": "lock", "status": "locked" if lock else "unlocked", "created": now, "updated": now})
+        bump_rev(trip)
+        return _resp(200, {"ok": True, "locks": _locks(trip, json.loads(meta.get("page") or "{}")), "suggestions": _suggestions(trip)})
     page = json.loads(meta.get("page") or "{}")
     if key not in switch_keys(_categories(trip, page)) or not isinstance(on, bool):
         return _resp(400, {"ok": False, "error": "section"})
@@ -594,7 +622,8 @@ def handler(event, _context):
     if method == "GET" and len(parts) == 3 and parts[2] == "map":   # the Trip Map's coordinates
         if not _code_ok(meta, (event.get("queryStringParameters") or {}).get("code")):
             return _resp(403, {"ok": False, "error": "code"})
-        return _resp(200, {"ok": True, "points": _geo(trip, json.loads(meta.get("page") or "{}"))})
+        points, left = _geo(trip, json.loads(meta.get("page") or "{}"))
+        return _resp(200, {"ok": True, "points": points, "left": left})
 
     if method == "POST" and len(parts) == 3 and parts[2] in ("suggestions", "remove", "approve", "sections", "goals", "categories"):
         try:

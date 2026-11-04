@@ -48,7 +48,7 @@ def check_page(page):
     # stage: "dates" or "lodging" for a trip-date or lodging option (a lodging option names its stay); other items are
     # the places on the ballot, each in one of the regions.
     lost = sorted({str(i.get("r")) for i in items if not i.get("stage")} - set(page.get("regions") or []))
-    bad_stage = [i.get("id") for i in items if "stage" in i and not (i["stage"] in ("dates", "lodging") and
+    bad_stage = [i.get("id") for i in items if "stage" in i and not (i["stage"] in ("locations", "dates", "lodging") and
                  (i["stage"] != "lodging" or i.get("stay") in stay_ids))]
     # dates: {"decided": "Thu Feb 18 - Mon Mar 1, 2027", "note": "...", "head": ["", "Lands", "Flies Home"], "rows": [[...]]};
     # without "decided", the trip-date options (stage "dates") are on the ballot.

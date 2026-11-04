@@ -164,6 +164,36 @@ button{font:inherit;color:inherit;cursor:pointer}
 .dates-t tbody th{font:600 14px var(--body)}
 .dates-t tbody tr{border-top:1px solid var(--line)}
 .dates-t tr.me th{color:var(--gold)}
+/* The Trip Map: Google's map in the page's colors, the route in gold with gilt date pills, a dot per spot. */
+.map-page{max-width:1200px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) 14px max(16px,env(safe-area-inset-left,0px))}
+.map-page[hidden]{display:none}
+@media (max-width:640px){.map-chip{min-height:30px;padding:4px 11px;font-size:12.5px}.map-legend{gap:6px}.trip-map{height:66vh}}
+.map-views{display:inline-flex;flex-wrap:wrap;max-width:100%;margin:10px 0 0}
+.map-views button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.map-legend{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 12px}
+.map-chip{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:5px 13px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--ink);font:500 13px var(--body);cursor:pointer}
+.map-chip i{width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 1px rgba(255,255,255,.2)}
+.map-chip i.route{width:16px;height:3px;border-radius:2px;background:var(--gilt);box-shadow:none}
+.map-chip[aria-pressed="false"]{opacity:.42}
+.trip-map{height:min(72vh,760px);min-height:380px;border:1px solid var(--gold-line);border-radius:14px;overflow:hidden;background:#0b0b0b}
+.map-note{margin:10px 0 0;color:var(--muted);font-size:13.5px}
+.map-leg,.map-pt,.map-dot,.map-pop{position:absolute}
+.map-leg{transform:translate(-50%,-50%);padding:3px 9px;border-radius:999px;background:var(--gilt);box-shadow:var(--sheen);color:#15110a;font:600 11px/1.3 var(--mono);white-space:nowrap}
+.map-pt{transform:translate(-50%,calc(-100% - 6px));padding:5px 10px;border:1px solid var(--gold-line);border-radius:9px;background:rgba(11,11,11,.88);color:var(--gold-2);font:600 13px/1.25 var(--body);text-align:center;white-space:nowrap;pointer-events:none}
+.map-pt small{display:block;color:var(--muted);font:400 10.5px/1.4 var(--mono);letter-spacing:.03em}
+.map-pt::after{content:"";position:absolute;left:50%;bottom:-6px;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 2px #0b0b0b}
+.map-pt.airport{color:var(--ink)}
+.map-pt.stay{display:grid;justify-items:center;border-color:var(--gold);color:var(--ink)}
+.map-pt.stay .ic{width:15px;height:15px;color:var(--gold)}
+.map-dot{width:14px;height:14px;padding:0;transform:translate(-50%,-50%);border:2px solid #0b0b0b;border-radius:50%;box-shadow:0 0 0 1px rgba(255,255,255,.28);cursor:pointer}
+.map-dot:hover,.map-dot:focus-visible{outline:none;box-shadow:0 0 0 2px var(--gold)}
+.map-pop{width:min(260px,72vw);transform:translate(-50%,calc(-100% - 14px));padding:12px 14px;border:1px solid var(--gold-line);border-radius:12px;background:var(--surface);box-shadow:0 10px 28px rgba(0,0,0,.55);color:var(--ink);font-size:13.5px;white-space:normal}
+.map-pop b{display:block;padding-right:22px;font:600 19px/1.15 var(--display)}
+.map-pop p{margin:4px 0 0;color:var(--muted)}
+.map-pop .map-tags{color:var(--gold-2);font:400 11.5px var(--mono)}
+.map-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.map-acts .tx-b{text-decoration:none}
+.map-x{position:absolute;top:6px;right:8px;border:0;background:none;color:var(--muted);font-size:15px;cursor:pointer}
 /* Each person's flights under the dates: the flight numbers on one line, the legs inside. */
 .flights{max-width:640px;margin-top:16px}
 .flights .sg-l{margin:0 0 2px}
@@ -174,7 +204,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .fp[open] summary::after{margin-bottom:-3px;transform:rotate(225deg)}
 .fp summary b{font:600 15px var(--body)}
 .fp.me summary b{color:var(--gold)}
-.fp-nums{color:var(--muted);font:400 12.5px var(--mono);letter-spacing:.04em}
+.fp-nums{color:var(--muted);font:400 12.5px var(--mono);letter-spacing:.04em;white-space:nowrap}
 .fp-l{margin:0;padding:0 14px 6px;list-style:none}
 .fp-l li{padding:10px 0;border-top:1px solid var(--line)}
 .fp-top{display:flex;align-items:baseline;gap:10px}
@@ -215,6 +245,14 @@ button{font:inherit;color:inherit;cursor:pointer}
 .switch::before{content:"";position:absolute;left:4px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--faint);transition:transform .2s}
 .switch[aria-checked="true"]{justify-content:flex-start;border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2)}
 .switch[aria-checked="true"]::before{transform:translateX(34px);background:var(--gold)}
+.switch.ai{width:84px}
+.switch.ai[aria-checked="true"]::before{transform:translateX(52px)}
+/* The plan's parts: a lock beside the switch. Gilt when locked. */
+.set-ctl{display:flex;flex:none;align-items:center;gap:8px}
+.lockbtn{display:inline-grid;place-items:center;width:36px;height:32px;padding:0;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--faint);cursor:pointer}
+.lockbtn .ic{width:15px;height:15px}
+.lockbtn:hover{border-color:var(--gold-line);color:var(--ink)}
+.lockbtn[aria-pressed="true"]{border-color:transparent;background:var(--gilt);box-shadow:var(--sheen);color:#15110a}
 .set-ask{margin:0 0 6px;padding:12px;border:1px solid var(--gold-line);border-radius:10px;background:var(--gold-wash);font-size:13.5px;line-height:1.55}
 .set-ask p{margin:0}
 .set-disp{display:flex;flex-wrap:wrap;align-items:center;gap:10px}

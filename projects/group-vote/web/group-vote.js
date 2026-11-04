@@ -58,6 +58,7 @@ const ICON={
   dates:'<rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3M5 9.2h1.4M7.3 9.2h1.4M9.6 9.2H11M5 11.4h1.4M7.3 11.4h1.4"/>',
   stay:'<path d="M1.5 3.5v10M1.5 10.5h13v3"/><circle cx="4.3" cy="8.3" r="1.4"/><path d="M7 10.5v-3h5a2.5 2.5 0 0 1 2.5 2.5v.5"/>',
   pin:'<path d="M8 14.2s4.6-4.4 4.6-7.7a4.6 4.6 0 0 0-9.2 0c0 3.3 4.6 7.7 4.6 7.7z"/><circle cx="8" cy="6.5" r="1.7"/>',
+  map:'<path d="M1.8 3.8l4-1.6 4.4 1.6 4-1.6v10l-4 1.6-4.4-1.6-4 1.6z"/><path d="M5.8 2.2v10M10.2 3.8v10"/>',
   gear:'<circle cx="8" cy="8" r="2.1"/><path d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.5 3.5l1.2 1.2M11.3 11.3l1.2 1.2M3.5 12.5l1.2-1.2M11.3 4.7l1.2-1.2"/><circle cx="8" cy="8" r="4.4"/>',
   funnel:'<path d="M2.5 3.5h11l-4.2 5v4.3l-2.6 1.2V8.5z"/>'
 };
@@ -215,7 +216,7 @@ let REV=0, SUGS=[], paceTimer=0;
 const SUG_STATE={held:"Awaiting OK",declined:"Skipped",queued:"Waiting",working:"Looking it up",added:"Added",duplicate:"Already listed",rejected:"Couldn't add",failed:"Couldn't add"};
 const TASTE_STATE={held:"Awaiting OK",declined:"Skipped",queued:"Waiting",working:"Updating tastes",added:"Tastes updated",rejected:"Not a taste",failed:"Couldn't update"};
 const REMOVE_STATE={removed:"Removed",restored:"Back on the List"};
-const SECTION_STATE={on:"AI Picks On",off:"Suggestions Only"}, PHOTO_STATE={on:"Photos On",off:"Photos Off"}, GOALS_STATE={updated:"Goals Updated"}, CATS_STATE={updated:"Categories Updated"};
+const SECTION_STATE={on:"AI Picks On",off:"Suggestions Only"}, PHOTO_STATE={on:"Photos On",off:"Photos Off"}, GOALS_STATE={updated:"Goals Updated"}, CATS_STATE={updated:"Categories Updated"}, LOCK_STATE={locked:"Locked",unlocked:"Unlocked"};
 const sugPending=()=>SUGS.some(s=>s.status==="queued"||s.status==="working");
 function pace(){ clearTimeout(paceTimer); if(sugPending()) paceTimer=setTimeout(loadVotes,5000) }
 function setSugs(xs){ const before=JSON.stringify(SUGS); SUGS=xs; if(JSON.stringify(SUGS)!==before) renderSugs() }
@@ -230,9 +231,9 @@ function renderSugs(){
   ul.textContent="";
   SUGS.slice(0,12).forEach(s=>{
     const kind=s.kind||"spot", li=el("li","sug "+s.status), going=s.status==="queued"||s.status==="working", shown=!!s.item&&ITEMS.some(i=>i.id===s.item);
-    li.appendChild(el("span","sug-st",(kind==="taste"?TASTE_STATE:kind==="remove"?REMOVE_STATE:kind==="section"?(s.text==="photos"?PHOTO_STATE:SECTION_STATE):kind==="goals"?GOALS_STATE:kind==="categories"?CATS_STATE:SUG_STATE)[s.status]||s.status));
+    li.appendChild(el("span","sug-st",(kind==="taste"?TASTE_STATE:kind==="remove"?REMOVE_STATE:kind==="section"?(s.text==="photos"?PHOTO_STATE:SECTION_STATE):kind==="goals"?GOALS_STATE:kind==="categories"?CATS_STATE:kind==="lock"?LOCK_STATE:SUG_STATE)[s.status]||s.status));
     const wait=s.status==="held"||s.status==="declined";
-    li.appendChild(el("span","sug-txt",kind==="goals"?"Squad Goals · "+s.by:kind==="categories"?s.text+" · "+s.by:kind==="section"?(s.text==="photos"&&s.status==="off"&&offWhy()?offWhy():secLabel(s.text))+" · "+s.by:kind==="remove"?s.text+" · "+s.by+(s.restoredBy?", back by "+s.restoredBy:"")
+    li.appendChild(el("span","sug-txt",kind==="goals"?"Squad Goals · "+s.by:kind==="categories"?s.text+" · "+s.by:kind==="lock"?secLabel(s.text)+" · "+s.by:kind==="section"?(s.text==="photos"&&s.status==="off"&&offWhy()?offWhy():secLabel(s.text))+" · "+s.by:kind==="remove"?s.text+" · "+s.by+(s.restoredBy?", back by "+s.restoredBy:"")
       :going||wait?sugWhat(s.text)+" from "+s.by+(s.status==="held"&&!isOwner?" · runs once "+ownerName()+" OKs it":"")
       :money(s.reason||sugWhat(s.text))+" · "+s.by));
     const btn=(t,f,c)=>{ const a=el("button","sug-see"+(c?" "+c:""),t); a.type="button"; a.onclick=f; li.appendChild(a) };
@@ -250,6 +251,7 @@ function lastLine(s){
   if(s.kind==="section") return s.text==="photos"?"Photos "+(s.status==="on"?"on":"off"+offWhy(true))+who:(s.status==="on"?"AI picks on in ":"Suggestions only in ")+secLabel(s.text)+who;
   if(s.kind==="goals") return "Squad Goals updated"+who;
   if(s.kind==="categories") return "Categories updated"+who;
+  if(s.kind==="lock") return secLabel(s.text)+" "+s.status+who;
   if(s.kind==="taste") return (TASTE_STATE[s.status]||s.status)+who;
   return (s.status==="added"&&it?"Added "+it.place:(SUG_STATE[s.status]||s.status)+": "+sugWhat(s.text))+who;
 }
@@ -331,6 +333,122 @@ function openCategories(){
     else msg.textContent=j&&j.error==="categories"?"Names up to 40 characters, descriptions up to 200, and at most 12.":"Couldn't save that. Try again in a moment.";
   });
   list.querySelector(".cat-label").focus();
+}
+// ---------- Trip Map ----------
+// The whole trip on one Google map, in the page's colors: the route between the regions (each leg a curved gold line
+// with its date), the regions with their dates, where we stay, and every spot as a dot in its category's color (tap
+// one for its card). Google's map loads only when this page opens, counted against the month's map budget; the
+// places' coordinates come from the server, which looks each up once and keeps it up to 25 days (TRIP.map: points,
+// legs, center, zoom).
+let tripMap=null, mapBusy=false, mapPop=null, mapView=ls("mapview")||"all";
+const mapLayers={route:[], dots:[]}, mapOff={route:false, cats:{}}, mapBox={};   // mapBox: each view's bounds
+const MAP_COLORS=["#e2c88e","#5fc3ad","#e58a92","#8ab8e6","#c3a6e8","#f0a868","#a6d86e","#d9d2c4","#f2d16b","#7fd1e0","#e0a2c8","#b8c97a"];
+const MAP_STYLE=[{elementType:"geometry",stylers:[{color:"#161615"}]},{elementType:"labels.text.fill",stylers:[{color:"#8d877a"}]},
+  {elementType:"labels.text.stroke",stylers:[{color:"#0b0b0b"}]},{featureType:"administrative",elementType:"geometry.stroke",stylers:[{color:"#3b352a"}]},
+  {featureType:"administrative.locality",elementType:"labels.text.fill",stylers:[{color:"#b8ae98"}]},{featureType:"poi",stylers:[{visibility:"off"}]},
+  {featureType:"road",elementType:"geometry",stylers:[{color:"#26241f"}]},{featureType:"road.highway",elementType:"geometry",stylers:[{color:"#3a3328"}]},
+  {featureType:"road",elementType:"labels.icon",stylers:[{visibility:"off"}]},{featureType:"transit",stylers:[{visibility:"off"}]},
+  {featureType:"water",elementType:"geometry",stylers:[{color:"#0c171e"}]},{featureType:"water",elementType:"labels.text.fill",stylers:[{color:"#46606d"}]},
+  {featureType:"landscape.natural",elementType:"geometry",stylers:[{color:"#1a1a17"}]}];
+// Google's map script, loaded once for the photos and the map alike.
+let mapsJsP=null;
+const mapsJs=()=>mapsJsP||(mapsJsP=loadMaps(MAPS_KEY).catch(e=>{ mapsJsP=null; throw e }));
+// A curved line from a to b ([lat, lng]), bowed to its right, so a leg and its way back never overlap.
+function mapArc(a,b,k){
+  const x1=a[1], y1=a[0], x2=b[1], y2=b[0], cx=(x1+x2)/2-(y2-y1)*k, cy=(y1+y2)/2+(x2-x1)*k, pts=[];
+  for(let i=0;i<=32;i++){ const t=i/32, u=1-t; pts.push({lat:u*u*y1+2*u*t*cy+t*t*y2, lng:u*u*x1+2*u*t*cx+t*t*x2}) }
+  return pts;
+}
+const catColor=k=>{ const i=GROUPS.findIndex(([g])=>g===k); return MAP_COLORS[(i<0?GROUPS.length:i)%MAP_COLORS.length] };
+function mapNote(t){ const n=$("#mapNote"); if(n){ n.textContent=t||""; n.hidden=!t } }
+async function ensureMap(){
+  if(tripMap||mapBusy||!TRIP.map) return;
+  if(!MAPS_KEY) return mapNote("The map isn't available right now. Each place's Google Maps button still works.");
+  mapBusy=true; mapNote("Loading the map…");
+  try{
+    const r=await post("/usage",{trip:TRIP_ID,code,kinds:["map"]});
+    if(!(r&&r.ok)){ mapBusy=false; if(r&&r.error==="code") return lockOut(CHANGED);
+      return mapNote(r&&r.error==="limit"?"This month's map budget is used up. Each place's Google Maps button still works.":"Couldn't load the map. Try again in a moment.") }
+    await mapsJs();
+    const {Map,OverlayView,Polyline}=await google.maps.importLibrary("maps"), {LatLng,LatLngBounds}=await google.maps.importLibrary("core");
+    let at={};
+    for(let i=0;i<3;i++){ const g=await api(tripPath+"/map?code="+encodeURIComponent(code)); if(!(g&&g.ok)) break; at=g.points||{}; if(!g.left) break }
+    class Pin extends OverlayView{
+      constructor(pos,node,z){ super(); this.pos=new LatLng(pos[0],pos[1]); this.node=node; this.node.style.zIndex=z||1; OverlayView.preventMapHitsAndGesturesFrom(node) }
+      onAdd(){ this.getPanes().overlayMouseTarget.appendChild(this.node) }
+      draw(){ const p=this.getProjection().fromLatLngToDivPixel(this.pos); if(p){ this.node.style.left=p.x+"px"; this.node.style.top=p.y+"px" } }
+      onRemove(){ this.node.remove() }
+    }
+    const M=TRIP.map, P=M.points||{}, box=$("#tripMap"), bounds=new LatLngBounds();
+    tripMap=new Map(box,{center:{lat:(M.center||[43,141.2])[0],lng:(M.center||[43,141.2])[1]},zoom:M.zoom||8,styles:MAP_STYLE,backgroundColor:"#0b0b0b",
+      disableDefaultUI:true,zoomControl:true,fullscreenControl:true,gestureHandling:"cooperative",clickableIcons:false});
+    const put=(pos,node,z,r)=>{ const o=new Pin(pos,node,z); o.setMap(tripMap); bounds.extend({lat:pos[0],lng:pos[1]});
+      if(r) (mapBox[r]=mapBox[r]||new LatLngBounds()).extend({lat:pos[0],lng:pos[1]}); return o };
+    // The route: each leg a curved gold line, an arrow along it, and its date halfway.
+    (M.legs||[]).forEach(L=>{ const a=P[L.from], b=P[L.to]; if(!a||!b) return;
+      const path=mapArc([a.lat,a.lng],[b.lat,b.lng],L.bend==null?.16:L.bend);
+      const line=new Polyline({map:tripMap,path,strokeColor:"#c9a55a",strokeOpacity:.9,strokeWeight:2.5,clickable:false,
+        icons:[{icon:{path:"M -2.6 2.2 L 0 -2.2 L 2.6 2.2",strokeColor:"#f0dcaa",strokeWeight:2,scale:1.4},offset:"58%"}]});
+      mapLayers.route.push(line);
+      const mid=path[16], lab=el("div","map-leg",L.when+(L.how?" · "+L.how:"")); mapLayers.route.push(put([mid.lat,mid.lng],lab,4)) });
+    // The regions and other named points (the airport, a stay without a Google place), with their dates.
+    Object.values(P).forEach(p=>{ const n=el("div","map-pt "+(p.kind||"region")); n.appendChild(el("b",null,p.name));
+      const w=p.r&&(TRIP.time||{})[p.r]; const sub=p.note||(Array.isArray(w)?w.join(" · "):"");
+      if(sub) n.appendChild(el("small",null,sub)); put([p.lat,p.lng],n,p.kind==="stay"?6:5,p.r) });
+    // Where we stay, by Google place.
+    (TRIP.lodging||[]).forEach(x=>{ const c=x.placeId&&at[x.placeId]; if(!c) return;
+      const n=el("div","map-pt stay"); n.innerHTML=icon("stay"); n.append(el("b",null,x.name||x.where),el("small",null,x.when||"")); put(c,n,6,REGIONS.includes(x.where)?x.where:"") });
+    // Every spot, as a dot in its category's color; tap for its card.
+    let shown=0;
+    ITEMS.forEach(it=>{ const c=it.placeId&&at[it.placeId]; if(!c) return; shown++;
+      const k=GROUPS.some(([g])=>g===it.group)?it.group:"", d=el("button","map-dot"); d.type="button"; d.style.background=catColor(k);
+      d.dataset.id=it.id; d.setAttribute("aria-label",it.dish+", "+it.place); d.title=it.place;
+      mapLayers.dots.push({o:put(c,d,7,it.r),r:it.r,k}); d.onclick=()=>mapCard(it,c,Pin) });
+    mapBox.all=bounds;
+    tripMap.addListener("click",()=>{ if(mapPop){ mapPop.setMap(null); mapPop=null } });
+    mapViews(); mapLegend(); mapShow(true);
+    mapNote(shown?"":"Places show once their spots are found on Google.");
+  }catch(e){ tripMap=null; mapNote("Couldn't load Google's map. Try again in a moment.") }
+  mapBusy=false;
+}
+// A spot's card on the map: what to get, where, its score, and a way to its card on the ballot.
+function mapCard(it,c,Pin){
+  if(mapPop){ mapPop.setMap(null); mapPop=null }
+  const n=el("div","map-pop"), x=el("button","map-x","✕"); x.type="button"; x.setAttribute("aria-label","Close"); x.onclick=()=>{ mapPop.setMap(null); mapPop=null };
+  n.append(x,el("b",null,it.dish),el("p",null,it.place+(it.area?" · "+it.area:"")));
+  const tags=el("p","map-tags"); if(it.score&&it.score!=="n/a") tags.append((TRIP.scoreLabel||"Rating")+" "+it.score+" · "); tags.append(secLabel(it.group)); n.appendChild(tags);
+  const row=el("div","map-acts"), see=el("button","tx-b","See on the Ballot"); see.type="button";
+  see.onclick=()=>{ mapPop.setMap(null); mapPop=null; setPage("eats",true); seeItem(it.id) };
+  const g=el("a","tx-b","Google Maps"); g.href=mapsLink(it); g.target="_blank"; g.rel="noopener"; row.append(see,g); n.appendChild(row);
+  mapPop=new Pin(c,n,9); mapPop.setMap(tripMap);
+}
+// What shows: the route unless it's switched off; a spot if its category is on and it's in the view (the whole trip,
+// or one region). fit: zoom to the view.
+function mapShow(fit){
+  if(!tripMap) return;
+  mapLayers.route.forEach(o=>o.setMap(mapOff.route?null:tripMap));
+  mapLayers.dots.forEach(d=>d.o.setMap(!mapOff.cats[d.k]&&(mapView==="all"||d.r===mapView)?tripMap:null));
+  document.querySelectorAll("#mapViews button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===mapView)));
+  if(fit){ const b=mapBox[mapView]||mapBox.all; if(b&&!b.isEmpty()) tripMap.fitBounds(b,mapView==="all"?48:36) }
+}
+// The views: the whole trip, or one region at a time (its spots, zoomed in). Remembered on this device.
+function mapViews(){
+  const V=$("#mapViews"); if(!V) return; V.textContent="";
+  if(mapView!=="all"&&!mapBox[mapView]) mapView="all";
+  [["all","Whole Trip"]].concat(REGIONS.filter(r=>mapBox[r]).map(r=>[r,r])).forEach(([v,label])=>{
+    const b=el("button",null,label); b.type="button"; b.dataset.v=v;
+    b.onclick=()=>{ mapView=v; ls("mapview",v); if(mapPop){ mapPop.setMap(null); mapPop=null } mapShow(true) };
+    V.appendChild(b) });
+}
+// The legend: the route and each category (tap to hide or show).
+function mapLegend(){
+  const L=$("#mapLegend"); if(!L) return; L.textContent="";
+  const chip=(label,color,on,set)=>{ const b=el("button","map-chip"); b.type="button"; b.setAttribute("aria-pressed",String(on));
+    const dot=el("i"); if(color) dot.style.background=color; else dot.className="route"; b.append(dot,label);
+    b.onclick=()=>{ const v=b.getAttribute("aria-pressed")!=="true"; b.setAttribute("aria-pressed",String(v)); set(!v); mapShow(false) };
+    L.appendChild(b) };
+  if(mapLayers.route.length) chip("Route",null,!mapOff.route,v=>{ mapOff.route=v });
+  GROUPS.concat([["",TRIP.otherLabel||"More to Try"]]).forEach(([k,label])=>{ if(mapLayers.dots.some(d=>d.k===k)) chip(label,catColor(k),!mapOff.cats[k],v=>{ mapOff.cats[k]=v }) });
 }
 // ---------- Squad Goals ----------
 // What the trip is for: a primary goal and a few secondary ones, under the intro. Anyone can edit them (for everyone,
@@ -475,7 +593,7 @@ function startPhotos(){
   if(placesLib) return pumpPhotos();
   if(mapsLoading||!MAPS_KEY) return;
   mapsLoading=true;
-  loadMaps(MAPS_KEY).then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; pumpPhotos() }).catch(()=>{});
+  mapsJs().then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; pumpPhotos() }).catch(()=>{});
 }
 function loadMaps(key){   // the key comes with the trip, after the password
   return new Promise((res,rej)=>{
@@ -916,8 +1034,23 @@ async function undoRemove(id){
 // "dates.decided"; a stay's "status": "booked") or a vote on its options (items with "stage": "dates", or "lodging" and
 // the open stay's id in "stay"), on the same cards and votes as the places. A trip with neither looks as it always did.
 const hasStages=()=>!!(TRIP.locations||TRIP.dates||(TRIP.lodging||[]).length||OPTS.length);
-// "Suggestions Only" on a section's heading while its AI picks are off.
-function offTag(h,k){ if(k&&!secOn(k)){ const t=el("span","off-tag","Suggestions Only"); t.title="AI picks are off here: only the group's suggestions show"; h.appendChild(t) } return h }
+// A part of the plan that's settled: Trip Locations or Trip Dates decided, or every night booked.
+// Locked in Settings (anyone, for everyone), or else settled by the trip itself. A locked part takes no suggestions.
+const settled=k=>TRIP.locks&&k in TRIP.locks?!!TRIP.locks[k]:k==="locations"?!!(TRIP.locations&&TRIP.locations.decided):k==="dates"?!!(TRIP.dates&&TRIP.dates.decided)
+  :k==="lodging"?(TRIP.lodging||[]).length>0&&(TRIP.lodging||[]).every(x=>x.status==="booked"):false;
+// A person's flights in short: each journey (legs that connect) as its date, departure time and airports, like
+// "2/18 12:55a JFK · HND · CTS". Legs without airport codes fall back to the flight numbers.
+const MONTHS="JanFebMarAprMayJunJulAugSepOctNovDec";
+function flightLine(legs){
+  if(!legs.every(l=>l.from&&l.to)) return [legs.map(l=>l.flight).join(" · ")];
+  const out=[]; let cur=null;
+  legs.forEach(l=>{ if(cur&&cur.to===l.from) { cur.ports.push(l.to); cur.to=l.to } else { cur={first:l,ports:[l.from,l.to],to:l.to}; out.push(cur) } });
+  return out.map(j=>{ const d=/([A-Z][a-z]{2})\s+(\d{1,2})/.exec(j.first.date||""), t=/(\d{1,2}:\d\d)\s*([AP])M/i.exec(j.first.times||"");
+    const md=d&&MONTHS.indexOf(d[1])>=0?(MONTHS.indexOf(d[1])/3+1)+"/"+d[2]:(j.first.date||"");
+    return [md,t?t[1]+t[2].toLowerCase():"",j.ports.join(" · ")].filter(Boolean).join(" ") });
+}
+// "Suggestions Only" on a section's heading while its AI picks are off; not on a settled part, which takes none.
+function offTag(h,k){ if(k&&!secOn(k)&&!settled(k)){ const t=el("span","off-tag","Suggestions Only"); t.title="AI picks are off here: only the group's suggestions show"; h.appendChild(t) } return h }
 const openStay=id=>(TRIP.lodging||[]).some(x=>x.id===id&&x.status!=="booked");
 const unrated=st=>me?OPTS.filter(i=>i.stage===st&&(st!=="lodging"||openStay(i.stay))&&typeof mineOf(i.id)!=="number").length:0;
 const spotsN=()=>ITEMS.length+(ITEMS.length===1?" Spot":" Spots");
@@ -925,13 +1058,13 @@ const spotsN=()=>ITEMS.length+(ITEMS.length===1?" Spot":" Spots");
 // Trip Locations, Trip Dates, Lodging and the places are each their own page, picked from the tabs in the bar (each
 // with a red count of what you haven't voted on there). The address bar carries it (#lodging), so a link opens that
 // page, and each device remembers the last one. A trip with only places has no tabs.
-const PAGES=[["locations","Locations","pin"],["dates","Dates","dates"],["lodging","Lodging","stay"],["eats","","mid"]];
+const PAGES=[["map","Map","map"],["locations","Locations","pin"],["dates","Dates","dates"],["lodging","Lodging","stay"],["eats","","mid"]];
 let PAGE="eats";
-const pageOk=p=>p==="eats"||(p==="locations"&&!!TRIP.locations)||(p==="dates"&&!!(TRIP.dates||OPTS.some(i=>i.stage==="dates")))||(p==="lodging"&&!!(TRIP.lodging||[]).length);
+const pageOk=p=>p==="eats"||(p==="map"&&!!(TRIP.map&&TRIP.map.points))||(p==="locations"&&!!TRIP.locations)||(p==="dates"&&!!(TRIP.dates||OPTS.some(i=>i.stage==="dates")))||(p==="lodging"&&!!(TRIP.lodging||[]).length);
 function startPage(){
   const h=(location.hash||"").slice(1); if(PAGES.some(([k])=>k===h)&&pageOk(h)) return h;
   const s=ls("page"); if(s&&pageOk(s)) return s;
-  const open=PAGES.find(([k])=>k!=="eats"&&pageOk(k)&&unrated(k)>0);   // a vote still waiting on you comes first
+  const open=PAGES.find(([k])=>k!=="eats"&&k!=="map"&&pageOk(k)&&unrated(k)>0);   // a vote still waiting on you comes first
   return open?open[0]:"eats";
 }
 function setPage(k,quiet){
@@ -942,9 +1075,10 @@ function setPage(k,quiet){
     if(t){ const y=t.getBoundingClientRect().top+scrollY-(b?b.offsetHeight:0)-8; if(scrollY>y) window.scrollTo({top:Math.max(0,y)}) } }
 }
 function applyPage(){
-  const eats=PAGE==="eats";
+  const eats=PAGE==="eats", map=PAGE==="map";
   ["locations","dates","lodging"].forEach(k=>{ const s=document.getElementById("stage-"+k); if(s) s.hidden=PAGE!==k });
-  $("#stages").hidden=eats||!hasStages(); $("#eats").hidden=$("#list").hidden=!eats;
+  const mp=$("#stage-map"); if(mp) mp.hidden=!map; if(map) ensureMap();   // the map loads the first time its page opens
+  $("#stages").hidden=eats||map||!hasStages(); $("#eats").hidden=$("#list").hidden=!eats;
   $("#eatsTools").hidden=$("#suggestBtn").hidden=!eats; if(!eats) showFilters(false);
   document.querySelectorAll("#tabs .tab").forEach(t=>t.setAttribute("aria-current",t.dataset.p===PAGE?"page":"false"));
 }
@@ -957,7 +1091,7 @@ function renderTabs(){
     lodging:open?open+" to Decide":"All Booked", eats:spotsN()};
   // Trip Locations, Trip Dates and Lodging: a gold lock once settled, else a red count of the options on the ballot (or,
   // before any are listed, of the nights left to pick). Eats & Events: a red count of the spots you haven't rated.
-  const locked={locations:!!(TRIP.locations&&TRIP.locations.decided), dates:!!(D&&D.decided), lodging:L.length>0&&!open};
+  const locked={locations:settled("locations"), dates:settled("dates"), lodging:settled("lodging")};
   const left={locations:0, dates:dn, lodging:ln||open, eats:me?ITEMS.filter(i=>typeof mineOf(i.id)!=="number").length:0};
   const what={dates:n=>n+(n===1?" date option":" date options"), lodging:n=>ln?n+(n===1?" lodging option":" lodging options"):n+(n===1?" night":" nights")+" left to pick",
     eats:n=>n+" for you to rate"};
@@ -1007,7 +1141,7 @@ function renderStages(){
       const F=D.flights||{}, who=D.rows.map(r=>r[0]).filter(n=>Array.isArray(F[n])&&F[n].length);
       if(who.length){ const fl=el("div","flights"); fl.appendChild(el("p","sg-l","Flights"));
         who.forEach(n=>{ const d=el("details","fp"+(n===me?" me":"")), sm=el("summary"), ol=el("ol","fp-l"); d.dataset.who=n;
-          sm.append(el("b",null,n),el("span","fp-nums",F[n].map(l=>l.flight).join(" · ")));
+          sm.append(el("b",null,n)); flightLine(F[n]).forEach(t=>sm.appendChild(el("span","fp-nums",t)));
           F[n].forEach(l=>{ const li=el("li"), top=el("div","fp-top"); top.append(el("b",null,l.flight),el("span",null,l.date)); li.appendChild(top);
             li.append(el("div","fp-rt",l.route),el("div","fp-tm",l.times)); if(l.note) li.appendChild(el("div","fp-note",l.note)); ol.appendChild(li) });
           d.append(sm,ol); fl.appendChild(d) });
@@ -1073,6 +1207,8 @@ function mountBallot(){
     +'<button type="button" class="fbtn" id="filterBtn" aria-expanded="false" aria-controls="filters" title="Filters">'+icon("funnel")+'<span class="fl">Filters</span><span class="fcur" id="fcur"></span></button></div>'
     +'<div class="filters" id="filters" role="group" aria-label="Show" hidden></div></div>'
     +'<div class="progress" aria-hidden="true"><i id="progress"></i></div></div>'
+    +'<section class="stage map-page" id="stage-map" hidden><h2 class="stage-h">Trip Map</h2><div class="seg map-views" id="mapViews" role="group" aria-label="Map view"></div><div class="map-legend" id="mapLegend"></div>'
+    +'<div class="trip-map" id="tripMap" role="region" aria-label="Trip map"></div><p class="map-note" id="mapNote" hidden></p></section>'
     +'<div class="hello" id="hello"></div><div class="stages" id="stages" hidden></div>'
     +'<section class="eats" id="eats"><h2 class="stage-h" id="eatsH" hidden></h2><nav class="jump" id="jump" aria-label="Jump to"></nav><section class="board" id="board" aria-label="Scoreboard"></section></section>'
     +'<main class="list" id="list"></main>'
@@ -1116,20 +1252,31 @@ function openSettings(){
   d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","setTitle"); c.tabIndex=-1; d.appendChild(c);
   const h=el("h2",null,"Settings"); h.id="setTitle"; c.appendChild(h);
   c.appendChild(el("p","sg-l","Sections"));
-  c.appendChild(el("p","sg-help","On: AI picks plus everyone's suggestions. Off: suggestions only, so AI picks are hidden there and our agent stops adding to it (suggestions still get looked up). This changes the page for everyone."));
+  c.appendChild(el("p","sg-help","AI On: AI picks plus everyone's suggestions. AI Off: suggestions only, so AI picks are hidden there and our agent stops adding to it (suggestions still get looked up). This changes the page for everyone."));
   const list=el("ul","set-l"), picks=k=>ALL.filter(i=>(i.stage||i.group||"")===k&&aiPick(i)).length;
   SECT.forEach(([k,label])=>{ const li=el("li","set-row"), on=secOn(k), n=picks(k), t=el("div","set-txt");
     t.append(el("b",null,label),el("small",null,n?n+(n===1?" AI Pick":" AI Picks"):"No AI Picks"));
     const sw=el("button","switch"); sw.type="button"; sw.dataset.k=k; sw.setAttribute("role","switch"); sw.setAttribute("aria-checked",String(on));
-    sw.setAttribute("aria-label",label+": AI picks "+(on?"on":"off")); sw.appendChild(el("span","switch-t",on?"On":"Off"));
-    sw.onclick=()=>ask(li,k,label,!on,n); li.append(t,sw); list.appendChild(li) });
+    sw.classList.add("ai"); sw.setAttribute("aria-label",label+": AI picks "+(on?"on":"off")); sw.appendChild(el("span","switch-t",on?"AI On":"AI Off"));
+    sw.onclick=()=>ask(li,k,label,!on,n);
+    const ctl=el("div","set-ctl"); ctl.appendChild(sw);
+    if(STAGE_SECT.some(([x])=>x===k)){   // the plan's parts: a lock, for everyone (no more suggestions)
+      const L=settled(k), lk=el("button","lockbtn"); lk.type="button"; lk.dataset.k=k; lk.setAttribute("aria-pressed",String(L)); lk.innerHTML=icon(L?"lock":"unlock");
+      lk.setAttribute("aria-label",label+(L?": locked. Unlock it":": unlocked. Lock it")); lk.title=L?"Locked: it takes no suggestions":"Lock it: no more suggestions";
+      lk.onclick=async()=>{ if(!me){ close(); return nudgeWho() } lk.disabled=true;
+        const j=await post(tripPath+"/sections",{code,name:me,section:k,lock:!L});
+        if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); await reloadTrip(); toast(label+(L?" unlocked":" locked")) }
+        else if(j&&j.error==="code") lockOut(CHANGED);
+        else { lk.disabled=false; toast("Couldn't change that. Try again in a moment.") } };
+      ctl.appendChild(lk) }
+    li.append(t,ctl); list.appendChild(li) });
   c.appendChild(list);
   const cw=el("div","set-disp cat-edit"), cb=el("button","tx-b"); cb.type="button"; cb.id="setCats"; cb.innerHTML=icon("todo");
   cb.appendChild(document.createTextNode("Edit Categories")); cb.onclick=()=>{ close(); openCategories() }; cw.appendChild(cb); c.appendChild(cw);
   // Photos, for everyone: off, the pages make no Google calls (places show illustrations; each Google Maps button still
   // has every photo), which saves the month's photo budget. One tap, logged in Recent Updates.
   c.appendChild(el("p","sg-l","Photos"));
-  const pl=el("ul","set-l"), pli=el("li","set-row"), ptx=el("div","set-txt"), pon=photosOn(), psw=el("button","switch"), puse=el("small",null,pon?"On for Everyone":"Off"+(offWhy(true)||" for Everyone"));
+  const pl=el("ul","set-l"), pli=el("li","set-row"), ptx=el("div","set-txt"), pon=photosOn(), psw=el("button","switch"), puse=el("small",null,"");
   ptx.append(el("b",null,"Google Photos"),puse);
   psw.type="button"; psw.id="photoSwitch"; psw.setAttribute("role","switch"); psw.setAttribute("aria-checked",String(pon));
   psw.setAttribute("aria-label","Google photos: "+(pon?"on":"off")+" for everyone"); psw.appendChild(el("span","switch-t",pon?"On":"Off"));
@@ -1140,7 +1287,7 @@ function openSettings(){
     else { psw.disabled=false; toast("Couldn't change that. Try again in a moment.") } };
   pli.append(ptx,psw); pl.appendChild(pli); c.appendChild(pl);
   c.appendChild(el("p","sg-help","Off saves the month's Google photo budget: places show illustrations, and each Google Maps button still has every photo."));
-  api("/usage").then(u=>{ if(u&&u.ok&&u.used&&u.limits) puse.textContent=(pon?"On":"Off"+offWhy(true))+" · "+u.used.photo+" of "+u.limits.photo+" Used This Month" }).catch(()=>{});
+  api("/usage").then(u=>{ if(u&&u.ok&&u.used&&u.limits) puse.textContent=u.used.photo+" of "+u.limits.photo+" Used This Month" }).catch(()=>{});
   function ask(li,k,label,on,n){
     if(!me){ close(); return nudgeWho() }
     list.querySelectorAll(".set-ask").forEach(x=>x.remove());
@@ -1271,7 +1418,7 @@ function boot(){
     if(fine) input.focus();
   }
   function open(j){
-    setTrip(j.trip||{}); REV=+j.rev||0; SUGS=j.suggestions||[];
+    setTrip(j.trip||{}); REV=+j.rev||0; SUGS=j.suggestions||[]; MAPS_KEY=j.mapsApiKey||null;
     me=ls("me"); if(TRAVELERS.indexOf(me)<0) me=null;
     ballots=j.ballots||{}; THUMBS=j.thumbs||{};
     isOwner=j.owner===true; if(OWNER&&!isOwner){ OWNER=""; ls("owner",null) }   // a wrong or old owner code is forgotten
@@ -1279,7 +1426,7 @@ function boot(){
     const swap=()=>{
       stopField(); gate.remove(); document.body.classList.remove("gv-locked"); window.scrollTo(0,0);
       mountBallot(); renderWho(); renderGoals(); render(); renderSugs(); pace();
-      MAPS_KEY=j.mapsApiKey; startPhotos();
+      startPhotos();
       setInterval(()=>{ if(document.visibilityState==="visible") loadVotes() },30000);
       document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") loadVotes() });
     };
