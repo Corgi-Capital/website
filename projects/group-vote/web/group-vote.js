@@ -9,22 +9,26 @@ const CFG=Object.assign({apiUrl:""},window.GROUP_VOTE||{});
 const TRIP_ID=String((window.TRIP&&window.TRIP.id)||"");
 let TRIP={}, TRAVELERS=[], ITEMS=[], OPTS=[], ALL=[], REGIONS=[];   // filled in from the server once the password checks out
 // ITEMS: the places on the ballot. OPTS: trip-date and lodging options ("stage": "dates" or "lodging"), voted the same way.
-const VLABEL={3:"Must",2:"I want",1:"Meh",0:"Nah"};   // shown in capitals; 3/2/1/0 points
-const DLABEL={3:"Best",2:"Works",1:"If needed",0:"Can't"};   // the same points, worded for trip-date options
+// A vote is stored as its level: 3 Must, 2 I want, 1 Meh, 0 Nah. POINTS turns a level into the points it adds.
+const VLABEL={3:"Must",2:"I want",1:"Meh",0:"Nah"};   // shown in capitals
+const DLABEL={3:"Best",2:"Works",1:"If needed",0:"Can't"};   // the same levels, worded for trip-date options
+const POINTS={3:3,2:1,1:0,0:-1};   // a Nah counts against a place
 const labels=it=>it&&it.stage==="dates"?DLABEL:VLABEL;
 // Each region's sections, in order. "tastes" are picked for this group, and where Suggest Spot puts new places; coffee
 // and things to do (shops, sights, events) it puts under Coffee and Events.
 const GROUPS=[["specialty","Regional Specialties"],["favorite","Local Favorites"],["tastes","Group Tastes"],["coffee","Coffee"],["event","Events"]];
 // The sections Suggest Spot and the agent fill: their cards get thumbs (up: a good pick; down: off the list if unwanted).
 const THUMBS_IN=new Set(["tastes","coffee"]);
-// Every section is ON (our picks plus everyone's suggestions) or OFF (suggestions only: our picks are hidden there and
-// the agent stops adding to it; suggestions still get looked up). Anyone can flip one in Settings, for everyone. Our
+// Every section is ON (AI picks plus everyone's suggestions) or OFF (suggestions only: AI picks are hidden there and
+// the agent stops adding to it; suggestions still get looked up). Anyone can flip one in Settings, for everyone. AI
 // picks are the trip file's own places and the agent's finds ("found"); a suggestion is what a traveler sent.
 const SECT=[["locations","Trip Locations"],["dates","Trip Dates"],["lodging","Lodging"]].concat(GROUPS);
 const secOn=k=>!(TRIP.sections&&TRIP.sections[k]===false);
 const aiPick=i=>!i.suggestedBy||!!i.found;
 const hiddenPick=i=>!secOn(i.stage||i.group||"")&&aiPick(i);
-const secLabel=k=>(SECT.find(([x])=>x===k)||[k,k])[1];
+const secLabel=k=>k==="photos"?"Photos":(SECT.find(([x])=>x===k)||[k,k])[1];
+// Google photos on the cards, for everyone (Settings). Off, the page makes no Google calls at all.
+const photosOn=()=>!(TRIP.sections&&TRIP.sections.photos===false);
 const TIER={casual:"Casual",mid:"Mid-Range",splurge:"Splurge"};
 // Small line icons for the card pills and the matching filters (16px grid, drawn in the text color).
 const ICON={
@@ -34,7 +38,7 @@ const ICON={
   sweets:'<path d="M4.6 7.4a3.4 3.4 0 1 1 6.8 0z"/><path d="M5 7.4 8 14l3-6.6"/>',
   drinks:'<path d="M2.5 2.5h11L8 8.5z"/><path d="M8 8.5v5M5.5 13.5h5"/>',
   coffee:'<path d="M2.5 6.5h9v3a4 4 0 0 1-4 4h-1a4 4 0 0 1-4-4z"/><path d="M11.5 7.5h.8a2 2 0 0 1 0 4h-1.3"/><path d="M5.6 1.8c-.7.8.7 1.6 0 2.6M8.4 1.8c-.7.8.7 1.6 0 2.6"/>',
-  lock:'<rect x="3.5" y="7.2" width="9" height="6.8" rx="1.6"/><path d="M5.6 7.2V5.4a2.4 2.4 0 0 1 4.8 0v1.8"/>',
+  lock:'<path d="M5.4 7.4V5.6a2.6 2.6 0 0 1 5.2 0v1.8"/><rect x="3.6" y="7.2" width="8.8" height="6.6" rx="1.6" fill="currentColor"/>',
   izakaya:'<path d="M6 2h4M6 14h4M8 3.2c-2.9 0-4.6 2.1-4.6 4.8s1.7 4.8 4.6 4.8 4.6-2.1 4.6-4.8S10.9 3.2 8 3.2z"/><path d="M3.5 6.4h9M3.5 9.6h9"/>',
   specialty:'<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>',
   slotted:'<path d="M2.5 3.5h11v10h-11zM2.5 6.5h11M5.5 2v3M10.5 2v3"/><path d="M5.8 10.1l1.6 1.6 3-3"/>',
@@ -185,14 +189,14 @@ async function reloadTrip(){
   const had=new Set([...ITEMS,...OPTS].map(i=>i.id)), first=[...document.querySelectorAll(".card")].find(c=>c.getBoundingClientRect().bottom>90);
   const anchor=first?{id:first.dataset.id, y:first.getBoundingClientRect().top}:null;
   setTrip(j.trip||{}); REV=+j.rev||0;
-  render(); renderSugs();   // the Updates buttons depend on which places are on the page (Undo for a removed one)
+  render(); renderSugs(); renderGoals(); startPhotos();   // the Updates buttons depend on which places are on the page (Undo for a removed one)
   if(anchor){ const c=document.querySelector('.card[data-id="'+anchor.id+'"]'); if(c) scrollBy(0,c.getBoundingClientRect().top-anchor.y) }
   [...ITEMS,...OPTS].filter(i=>!had.has(i.id)).forEach(i=>{ const k=cards[i.id]; if(k) k.c.classList.add("flash") });
 }
 function setTrip(t){
   TRIP=t; TRAVELERS=TRIP.travelers||[]; REGIONS=TRIP.regions||[];
   const all=(TRIP.items||[]).map(i=>Object.assign({},i,{dish:titleCase(i.dish),badge:titleCase(i.badge)}));
-  ALL=all; ITEMS=all.filter(i=>!i.stage&&!hiddenPick(i)); OPTS=all.filter(i=>i.stage&&!hiddenPick(i));   // OFF sections drop our picks
+  ALL=all; ITEMS=all.filter(i=>!i.stage&&!hiddenPick(i)); OPTS=all.filter(i=>i.stage&&!hiddenPick(i));   // OFF sections drop their AI picks
 }
 
 // ---------- Suggest Spot ----------
@@ -203,7 +207,7 @@ let REV=0, SUGS=[], paceTimer=0;
 const SUG_STATE={held:"Awaiting OK",declined:"Skipped",queued:"Waiting",working:"Looking it up",added:"Added",duplicate:"Already listed",rejected:"Couldn't add",failed:"Couldn't add"};
 const TASTE_STATE={held:"Awaiting OK",declined:"Skipped",queued:"Waiting",working:"Updating tastes",added:"Tastes updated",rejected:"Not a taste",failed:"Couldn't update"};
 const REMOVE_STATE={removed:"Removed",restored:"Back on the List"};
-const SECTION_STATE={on:"Picks On",off:"Suggestions Only"};
+const SECTION_STATE={on:"AI Picks On",off:"Suggestions Only"}, PHOTO_STATE={on:"Photos On",off:"Photos Off"}, GOALS_STATE={updated:"Goals Updated"};
 const sugPending=()=>SUGS.some(s=>s.status==="queued"||s.status==="working");
 function pace(){ clearTimeout(paceTimer); if(sugPending()) paceTimer=setTimeout(loadVotes,5000) }
 function setSugs(xs){ const before=JSON.stringify(SUGS); SUGS=xs; if(JSON.stringify(SUGS)!==before) renderSugs() }
@@ -218,9 +222,9 @@ function renderSugs(){
   ul.textContent="";
   SUGS.slice(0,12).forEach(s=>{
     const kind=s.kind||"spot", li=el("li","sug "+s.status), going=s.status==="queued"||s.status==="working", shown=!!s.item&&ITEMS.some(i=>i.id===s.item);
-    li.appendChild(el("span","sug-st",(kind==="taste"?TASTE_STATE:kind==="remove"?REMOVE_STATE:kind==="section"?SECTION_STATE:SUG_STATE)[s.status]||s.status));
+    li.appendChild(el("span","sug-st",(kind==="taste"?TASTE_STATE:kind==="remove"?REMOVE_STATE:kind==="section"?(s.text==="photos"?PHOTO_STATE:SECTION_STATE):kind==="goals"?GOALS_STATE:SUG_STATE)[s.status]||s.status));
     const wait=s.status==="held"||s.status==="declined";
-    li.appendChild(el("span","sug-txt",kind==="section"?secLabel(s.text)+" · "+s.by:kind==="remove"?s.text+" · "+s.by+(s.restoredBy?", back by "+s.restoredBy:"")
+    li.appendChild(el("span","sug-txt",kind==="goals"?"Squad Goals · "+s.by:kind==="section"?secLabel(s.text)+" · "+s.by:kind==="remove"?s.text+" · "+s.by+(s.restoredBy?", back by "+s.restoredBy:"")
       :going||wait?sugWhat(s.text)+" from "+s.by+(s.status==="held"&&!isOwner?" · runs once "+ownerName()+" OKs it":"")
       :money(s.reason||sugWhat(s.text))+" · "+s.by));
     const btn=(t,f,c)=>{ const a=el("button","sug-see"+(c?" "+c:""),t); a.type="button"; a.onclick=f; li.appendChild(a) };
@@ -235,7 +239,8 @@ function renderSugs(){
 function lastLine(s){
   const it=s.item&&byId(s.item), back=s.kind==="remove"&&s.status==="restored", who=" · "+(back&&s.restoredBy?s.restoredBy:s.by);
   if(s.kind==="remove") return (back?"Back on the list: ":"Removed ")+s.text+who;
-  if(s.kind==="section") return (s.status==="on"?"Our picks on in ":"Suggestions only in ")+secLabel(s.text)+who;
+  if(s.kind==="section") return s.text==="photos"?"Photos "+(s.status==="on"?"on":"off")+who:(s.status==="on"?"AI picks on in ":"Suggestions only in ")+secLabel(s.text)+who;
+  if(s.kind==="goals") return "Squad Goals updated"+who;
   if(s.kind==="taste") return (TASTE_STATE[s.status]||s.status)+who;
   return (s.status==="added"&&it?"Added "+it.place:(SUG_STATE[s.status]||s.status)+": "+sugWhat(s.text))+who;
 }
@@ -261,6 +266,55 @@ async function approve(ids,run){
   else if(j&&j.error==="code") lockOut(CHANGED);
   else if(j&&j.error==="owner"){ OWNER=""; isOwner=false; ls("owner",null); renderSugs(); toast("This device's owner link stopped working") }
   else toast("Couldn't do that. Try again in a moment.");
+}
+// ---------- Squad Goals ----------
+// What the trip is for: a primary goal and a few secondary ones, under the intro. Anyone can edit them (for everyone,
+// logged in Recent Updates), and our agent reads them when it looks up suggestions, updates Group Tastes and searches.
+function renderGoals(){
+  const G=$("#goals"); if(!G) return; G.textContent="";
+  const g=TRIP.goals||{}, more=g.secondary||[];
+  const h=el("div","goals-h"), e=el("button","goals-edit"); h.appendChild(el("span","goals-t","Squad Goals"));
+  e.type="button"; e.id="goalsEdit"; e.innerHTML=icon("todo"); e.appendChild(document.createTextNode("Edit")); e.onclick=openGoals; h.appendChild(e); G.appendChild(h);
+  if(g.primary){ const p=el("p","goal-1"); p.innerHTML=icon("specialty"); p.appendChild(document.createTextNode(g.primary)); G.appendChild(p) }
+  else G.appendChild(el("p","goals-none","No goals yet. Add what this trip is for."));
+  if(more.length){ const ul=el("ul","goal-2"); more.forEach(x=>ul.appendChild(el("li",null,x))); G.appendChild(ul) }
+}
+function openGoals(){
+  if(!me) return nudgeWho();
+  if(document.querySelector(".sg")) return;
+  const g=TRIP.goals||{}, from=document.activeElement, d=el("div","sg");
+  d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","glTitle");
+  d.innerHTML='<form class="sg-card" novalidate><h2 id="glTitle">Squad Goals</h2>'
+    +'<p class="sg-help">What this trip is for. Everyone sees them, and our agent reads them when it looks up suggestions and searches for spots.</p>'
+    +'<label class="sg-l" for="glMain">Primary Goal</label><input id="glMain" maxlength="120" autocomplete="off">'
+    +'<label class="sg-l" for="glMore">Secondary Goals</label><textarea id="glMore" class="gl" rows="3" maxlength="800" placeholder="One per line, up to 6"></textarea>'
+    +'<p class="sg-msg" role="status" aria-live="polite"></p>'
+    +'<div class="sg-row"><button type="button" class="sg-cancel">Cancel</button><button type="submit" class="sg-go">Save</button></div></form>';
+  document.body.appendChild(d); document.body.classList.add("lb-open");
+  const f=d.querySelector("form"), main=d.querySelector("#glMain"), ta=d.querySelector("#glMore"), msg=d.querySelector(".sg-msg"), go=d.querySelector(".sg-go");
+  main.value=g.primary||""; ta.value=(g.secondary||[]).join("\n");
+  function close(){ d.remove(); document.body.classList.remove("lb-open"); removeEventListener("keydown",key,true); if(from&&from.focus) from.focus({preventScroll:true}) }
+  function key(e){
+    if(e.key==="Escape"){ e.preventDefault(); close() }
+    else if(e.key==="Tab"){ const fs=[...d.querySelectorAll("textarea,input,button:not([disabled])")], i=fs.indexOf(document.activeElement);
+      if(e.shiftKey&&i<=0){ e.preventDefault(); fs[fs.length-1].focus() } else if(!e.shiftKey&&i===fs.length-1){ e.preventDefault(); fs[0].focus() } }
+  }
+  addEventListener("keydown",key,true);
+  d.addEventListener("click",e=>{ if(e.target===d) close() });
+  d.querySelector(".sg-cancel").onclick=close;
+  f.addEventListener("submit",async e=>{
+    e.preventDefault();
+    const primary=main.value.trim(), secondary=ta.value.split("\n").map(s=>s.trim()).filter(Boolean);
+    if(!primary){ msg.textContent="Write the primary goal."; main.focus(); return }
+    if(secondary.length>6){ msg.textContent="Up to 6 secondary goals, please."; ta.focus(); return }
+    go.disabled=true; msg.textContent="Saving…";
+    const j=await post(tripPath+"/goals",{code,name:me,primary,secondary});
+    go.disabled=false;
+    if(j&&j.ok){ TRIP.goals=j.goals; renderGoals(); setSugs(j.suggestions||SUGS); close(); toast("Squad Goals saved for everyone") }
+    else if(j&&j.error==="code") lockOut(CHANGED);
+    else msg.textContent=j&&j.error==="goals"?"Keep each goal under 120 characters.":"Couldn't save that. Try again in a moment.";
+  });
+  main.focus();
 }
 function nudgeWho(){ const w=$("#whoWrap"); w.classList.remove("nudge"); void w.offsetWidth; w.classList.add("nudge"); toast("Pick your name first") }
 // The Group Tastes as they stand, for the top of the dialog: what the group loves and avoids (short lists the agent keeps
@@ -348,6 +402,16 @@ const DEFAULT_PICKS=[1,2,3,0];
 let placesLib=null, budgetSpent=false, mapsDown=false, photosDown=false, worked=0, failRun=0, active=0, shownOk=0, badRun=0, photoTries=0;
 const queue=[], tried={};
 window.gm_authFailure=()=>{ mapsDown=true };
+let MAPS_KEY=null, mapsLoading=false;
+// Google Maps loads only while photos are on (Settings), and the first time they're on: from the start, or once someone
+// turns them back on.
+function startPhotos(){
+  if(!photosOn()) return;
+  if(placesLib) return pumpPhotos();
+  if(mapsLoading||!MAPS_KEY) return;
+  mapsLoading=true;
+  loadMaps(MAPS_KEY).then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; pumpPhotos() }).catch(()=>{});
+}
 function loadMaps(key){   // the key comes with the trip, after the password
   return new Promise((res,rej)=>{
     if(!key) return rej(new Error("no key"));
@@ -364,6 +428,12 @@ const byId=id=>ITEMS.find(i=>i.id===id)||OPTS.find(i=>i.id===id);
 function mapsLink(it){
   const u="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(it.q||it.place||"");
   return it.placeId?u+"&query_place_id="+encodeURIComponent(it.placeId):u;
+}
+// The Google Maps button on a card or a stay: the place itself, with every photo and review. A plain link: no API call.
+function gmapsBtn(it){
+  const g=el("a","lnk gmaps"); g.href=mapsLink(it); g.target="_blank"; g.rel="noopener"; if(it.id) g.dataset.id=it.id;
+  g.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
+  g.appendChild(gm()); g.setAttribute("aria-label",(it.place||it.q||"")+" on Google Maps: every photo and review"); return g;
 }
 // "Google Maps" as Google's attribution rules want it: exactly that text, never translated.
 const gm=()=>{ const t=el("span",null,"Google Maps"); t.setAttribute("translate","no"); return t };
@@ -383,6 +453,7 @@ async function reserve(kind){
   const j=await post("/usage",{trip:TRIP_ID,code,kinds:[kind]});
   if(j&&j.ok) return true;
   if(j&&j.error==="code") lockOut(CHANGED);
+  else if(j&&j.error==="off") TRIP.sections=Object.assign({},TRIP.sections,{photos:false});   // switched off since this page loaded
   else if(j&&j.error==="limit"&&!budgetSpent){ budgetSpent=true; photoNote() }
   return false;
 }
@@ -398,7 +469,7 @@ function quotaReset(){
 function photosOff(){ if(photosDown) return; photosDown=true; photoNote() }
 function wantPhoto(id){ if(tried[id]) return; tried[id]=true; queue.push(id); pumpPhotos() }
 function pumpPhotos(){
-  while(placesLib&&!mapsDown&&!photosDown&&!budgetSpent&&queue.length&&active<(worked?3:1)){
+  while(placesLib&&photosOn()&&!mapsDown&&!photosDown&&!budgetSpent&&queue.length&&active<(worked?3:1)){
     const id=queue.shift(); active++;
     lookUp(id).catch(()=>{}).finally(()=>{ active--; pumpPhotos() });
   }
@@ -423,7 +494,7 @@ function shot(ph,size){ const a=(ph.authorAttributions||[])[0]||{}; return {url:
 // The photo at position p: reserved, and its URL made, the first time this page asks for it.
 function ensureShot(ph,p){
   if(ph.shots[p]) return Promise.resolve(ph.shots[p]);
-  if(photosDown||budgetSpent) return Promise.resolve(null);
+  if(photosDown||budgetSpent||!photosOn()) return Promise.resolve(null);
   if(!ph.wait[p]) ph.wait[p]=reserve("photo").then(ok=>{ ph.wait[p]=null; if(ok&&!photosDown) ph.shots[p]=shot(ph.list[p],PHOTO_PX); return ph.shots[p]||null });
   return ph.wait[p];
 }
@@ -523,7 +594,8 @@ function openViewer(id,start){
 
 // ---------- Ballot ----------
 const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-");
-function totals(id){let t=0,n=0; TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][id]; if(typeof v==="number"){t+=v;n++}}); return {t,n}}
+// t: the group's points; n: how many voted; lv: the votes' levels added up (the total's color is the average level).
+function totals(id){let t=0,n=0,lv=0; TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][id]; if(typeof v==="number"){t+=POINTS[v]||0;lv+=v;n++}}); return {t,n,lv}}
 const mineOf=id=>me&&ballots[me]?ballots[me][id]:undefined;
 function visibleItems(){
   if(filter==="casual") return ITEMS.filter(i=>i.tier==="casual");
@@ -579,9 +651,7 @@ function card(it,rank){
   if(it.url){ let h=""; try{ h=new URL(it.url).hostname }catch(e){}
     const a=el("a","lnk",/(^|\.)tabelog\.com$/.test(h)?"Tabelog":/tablecheck\.com$/.test(h)?"Book on TableCheck":"Website");
     a.href=it.url; a.target="_blank"; a.rel="noopener"; links.appendChild(a) }
-  if(it.placeId||it.q){ const g=el("a","lnk gmaps"); g.href=mapsLink(it); g.target="_blank"; g.rel="noopener"; g.dataset.id=it.id;
-    g.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
-    g.appendChild(gm()); g.setAttribute("aria-label",it.place+" on Google Maps: every photo and review"); links.appendChild(g) }
+  if(it.placeId||it.q) links.appendChild(gmapsBtn(it));
   if(links.firstChild) act.appendChild(links);
   // Group Tastes and Coffee: a thumbs up for a good pick (the agent looks for more like it), a thumbs down to take it off the list.
   let th=null;
@@ -598,7 +668,7 @@ function card(it,rank){
   c.appendChild(b);
   cards[it.id]={c,ph,vote,tally,th};
   patch(it.id);
-  if(photos[it.id]) buildStrip(it.id); else if(!tried[it.id]){ if(io) io.observe(ph); else wantPhoto(it.id) }
+  if(photosOn()){ if(photos[it.id]) buildStrip(it.id); else if(!tried[it.id]){ if(io) io.observe(ph); else wantPhoto(it.id) } }
   return c;
 }
 // Updates one card's vote buttons and group tally without rebuilding it.
@@ -610,9 +680,9 @@ function patch(id){
   // Colored by the average vote (all MUSTs = MUST green, all NAHs = NAH red); uncolored until someone votes.
   const tot=el("span","total"+(tt.n?" grad":""),String(tt.t));
   const L=labels(byId(id));
-  tot.title="Group points: "+[3,2,1,0].map(v=>L[v]+" "+v).join(", ")+(tt.n?" · average "+(tt.t/tt.n).toFixed(1):"");
-  if(tt.n) tot.style.setProperty("--t",(tt.t/tt.n/3).toFixed(3));
-  k.tally.append(tot,el("span","pts",tt.t===1?"Point":"Points"),el("span","nvoted",tt.n+"/"+TRAVELERS.length+" Voted"));
+  tot.title="Group points: "+[3,2,1,0].map(v=>L[v]+" "+POINTS[v]).join(", ")+(tt.n?" · average "+(tt.t/tt.n).toFixed(1):"");
+  if(tt.n) tot.style.setProperty("--t",(tt.lv/tt.n/3).toFixed(3));
+  k.tally.append(tot,el("span","pts",Math.abs(tt.t)===1?"Point":"Points"),el("span","nvoted",tt.n+"/"+TRAVELERS.length+" Voted"));
   const dots=el("span","dots");
   TRAVELERS.forEach(p=>{const v=ballots[p]&&ballots[p][id]; const d=el("span","dot"+(typeof v==="number"?" v"+v:""),p[0]); d.title=p+": "+(typeof v==="number"?L[v]:"not voted yet"); dots.appendChild(d)});
   k.tally.appendChild(dots);
@@ -780,8 +850,8 @@ async function undoRemove(id){
 // "dates.decided"; a stay's "status": "booked") or a vote on its options (items with "stage": "dates", or "lodging" and
 // the open stay's id in "stay"), on the same cards and votes as the places. A trip with neither looks as it always did.
 const hasStages=()=>!!(TRIP.locations||TRIP.dates||(TRIP.lodging||[]).length||OPTS.length);
-// "Suggestions Only" on a section's heading while its picks are off.
-function offTag(h,k){ if(k&&!secOn(k)){ const t=el("span","off-tag","Suggestions Only"); t.title="Our picks are off here: only the group's suggestions show"; h.appendChild(t) } return h }
+// "Suggestions Only" on a section's heading while its AI picks are off.
+function offTag(h,k){ if(k&&!secOn(k)){ const t=el("span","off-tag","Suggestions Only"); t.title="AI picks are off here: only the group's suggestions show"; h.appendChild(t) } return h }
 const openStay=id=>(TRIP.lodging||[]).some(x=>x.id===id&&x.status!=="booked");
 const unrated=st=>me?OPTS.filter(i=>i.stage===st&&(st!=="lodging"||openStay(i.stay))&&typeof mineOf(i.id)!=="number").length:0;
 const spotsN=()=>ITEMS.length+(ITEMS.length===1?" Spot":" Spots");
@@ -829,7 +899,7 @@ function renderTabs(){
     const b=el("button","tab"); b.type="button"; b.dataset.p=k; b.setAttribute("aria-current",k===PAGE?"page":"false"); b.innerHTML=icon(ic);
     const t=el("b"); if(k==="eats") t.textContent=TRIP.spotsTitle||"Eats & Events"; else { if(k!=="lodging") t.appendChild(el("span","tw","Trip ")); t.append(label) }
     b.append(t,el("small",null,note[k]));
-    if(locked[k]){ const c=el("span","lock"); c.innerHTML=icon("lock"); c.setAttribute("role","img"); c.setAttribute("aria-label",k==="lodging"?"All booked":"Decided");
+    if(locked[k]){ const c=el("span","tlock"); c.innerHTML=icon("lock"); c.setAttribute("role","img"); c.setAttribute("aria-label",k==="lodging"?"All booked":"Decided");
       c.title=k==="lodging"?"All booked":"Decided"; b.appendChild(c) }
     else if(left[k]){ const c=el("span","cnt",left[k]>99?"99+":String(left[k])); c.title=(what[k]||(n=>n+" options"))(left[k]); b.appendChild(c) }
     b.onclick=()=>setPage(k); T.appendChild(b) });
@@ -884,6 +954,7 @@ function renderStages(){
         if(/^https:\/\//.test(x.url||"")){ const a=el("a",null,x.name); a.href=x.url; a.target="_blank"; a.rel="noopener"; n.appendChild(a) } else n.textContent=x.name;
         if(x.area) n.append(" · "+x.area); b.appendChild(n) }
       if(x.note){ const p=el("p","note",money(x.note)); p.dataset.raw=x.note; b.appendChild(p) }
+      if(x.placeId||x.q){ const lk=el("div","links lodge-links"); lk.appendChild(gmapsBtn({placeId:x.placeId,q:x.q||x.name,place:x.name})); b.appendChild(lk) }   // its Google place
       li.appendChild(b); ul.appendChild(li) });
     s.appendChild(ul);
     L.filter(x=>x.status!=="booked").forEach(x=>{ const os=OPTS.filter(i=>i.stage==="lodging"&&i.stay===x.id); if(!os.length) return;
@@ -899,7 +970,7 @@ function leaders(){
     const os=OPTS.filter(i=>i.stay===p.dataset.stay).map(i=>Object.assign({it:i},totals(i.id))).filter(o=>o.n).sort((a,b)=>b.t-a.t||b.n-a.n);
     if(!os.length){ p.textContent="Vote on where we stay: the most points wins."; return }
     const top=os.filter(o=>o.t===os[0].t);
-    p.textContent=(top.length>1?"Tied at the top: "+top.map(o=>o.it.dish).join(" and "):"Leading: "+os[0].it.dish)+" · "+os[0].t+(os[0].t===1?" Point":" Points");
+    p.textContent=(top.length>1?"Tied at the top: "+top.map(o=>o.it.dish).join(" and "):"Leading: "+os[0].it.dish)+" · "+os[0].t+(Math.abs(os[0].t)===1?" Point":" Points");
   });
 }
 function syncTools(){
@@ -915,7 +986,7 @@ function mountBallot(){
   const v=el("div","gv-ballot");
   v.innerHTML='<header class="hd"><div class="hd-top"><a class="mark" href="/">Corgi Capital</a>'
     +'<button type="button" class="lock" id="lock" title="Forget the password on this device">Lock</button></div>'
-    +'<h1 id="title"></h1><p id="intro"></p>'
+    +'<h1 id="title"></h1><p id="intro"></p><section class="goals" id="goals" aria-label="Squad Goals"></section>'
     +'<details class="sugs" id="sugs" hidden><summary></summary><ul class="sugs-l" aria-live="polite"></ul></details><div class="banner" id="setupBanner" hidden></div></header>'
     +'<div class="bar" id="bar"><div class="bar-in"><div class="who" id="whoWrap"><span class="label">I am</span><div class="chips" id="who"></div></div>'
     +'<div class="counts"><span id="mine"></span><span class="status" id="status"></span></div>'
@@ -969,24 +1040,39 @@ function openSettings(){
   d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","setTitle"); c.tabIndex=-1; d.appendChild(c);
   const h=el("h2",null,"Settings"); h.id="setTitle"; c.appendChild(h);
   c.appendChild(el("p","sg-l","Sections"));
-  c.appendChild(el("p","sg-help","On: our picks plus everyone's suggestions. Off: suggestions only, so our picks are hidden there and our agent stops adding to it (suggestions still get looked up). This changes the page for everyone."));
+  c.appendChild(el("p","sg-help","On: AI picks plus everyone's suggestions. Off: suggestions only, so AI picks are hidden there and our agent stops adding to it (suggestions still get looked up). This changes the page for everyone."));
   const list=el("ul","set-l"), picks=k=>ALL.filter(i=>(i.stage||i.group||"")===k&&aiPick(i)).length;
   SECT.forEach(([k,label])=>{ const li=el("li","set-row"), on=secOn(k), n=picks(k), t=el("div","set-txt");
-    t.append(el("b",null,label),el("small",null,n?n+(n===1?" Pick":" Picks"):"No Picks"));
+    t.append(el("b",null,label),el("small",null,n?n+(n===1?" AI Pick":" AI Picks"):"No AI Picks"));
     const sw=el("button","switch"); sw.type="button"; sw.dataset.k=k; sw.setAttribute("role","switch"); sw.setAttribute("aria-checked",String(on));
-    sw.setAttribute("aria-label",label+": our picks "+(on?"on":"off")); sw.appendChild(el("span","switch-t",on?"On":"Off"));
+    sw.setAttribute("aria-label",label+": AI picks "+(on?"on":"off")); sw.appendChild(el("span","switch-t",on?"On":"Off"));
     sw.onclick=()=>ask(li,k,label,!on,n); li.append(t,sw); list.appendChild(li) });
   c.appendChild(list);
+  // Photos, for everyone: off, the pages make no Google calls (places show illustrations; each Google Maps button still
+  // has every photo), which saves the month's photo budget. One tap, logged in Recent Updates.
+  c.appendChild(el("p","sg-l","Photos"));
+  const pl=el("ul","set-l"), pli=el("li","set-row"), ptx=el("div","set-txt"), pon=photosOn(), psw=el("button","switch"), puse=el("small",null,pon?"On for Everyone":"Off for Everyone");
+  ptx.append(el("b",null,"Google Photos"),puse);
+  psw.type="button"; psw.id="photoSwitch"; psw.setAttribute("role","switch"); psw.setAttribute("aria-checked",String(pon));
+  psw.setAttribute("aria-label","Google photos: "+(pon?"on":"off")+" for everyone"); psw.appendChild(el("span","switch-t",pon?"On":"Off"));
+  psw.onclick=async()=>{ if(!me){ close(); return nudgeWho() } psw.disabled=true;
+    const j=await post(tripPath+"/sections",{code,name:me,section:"photos",on:!pon});
+    if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); await reloadTrip(); toast(pon?"Photos are off for everyone":"Photos are on for everyone") }
+    else if(j&&j.error==="code") lockOut(CHANGED);
+    else { psw.disabled=false; toast("Couldn't change that. Try again in a moment.") } };
+  pli.append(ptx,psw); pl.appendChild(pli); c.appendChild(pl);
+  c.appendChild(el("p","sg-help","Off saves the month's Google photo budget: places show illustrations, and each Google Maps button still has every photo."));
+  api("/usage").then(u=>{ if(u&&u.ok&&u.used&&u.limits) puse.textContent=(pon?"On":"Off")+" · "+u.used.photo+" of "+u.limits.photo+" Used This Month" }).catch(()=>{});
   function ask(li,k,label,on,n){
     if(!me){ close(); return nudgeWho() }
     list.querySelectorAll(".set-ask").forEach(x=>x.remove());
-    const a=el("li","set-ask"), p=el("p",null,on?"Turn our picks back on in "+label+"?"+(n?" "+n+(n===1?" spot returns":" spots return")+" to everyone's ballot, votes and all.":"")
-      :"Turn off our picks in "+label+"?"+(n?" This hides "+n+(n===1?" spot":" spots")+" from everyone's ballot; their votes are kept and come back if it's turned on again.":"")+" Only suggestions will show there.");
+    const a=el("li","set-ask"), p=el("p",null,on?"Turn AI picks back on in "+label+"?"+(n?" "+n+(n===1?" spot returns":" spots return")+" to everyone's ballot, votes and all.":"")
+      :"Turn off AI picks in "+label+"?"+(n?" This hides "+n+(n===1?" spot":" spots")+" from everyone's ballot; their votes are kept and come back if it's turned on again.":"")+" Only suggestions will show there.");
     const no=el("button","sg-cancel","Cancel"), yes=el("button","sg-go",on?"Turn On":"Turn Off"), row=el("div","sg-row"); no.type=yes.type="button";
     no.onclick=()=>a.remove();
     yes.onclick=async()=>{ yes.disabled=true;
       const j=await post(tripPath+"/sections",{code,name:me,section:k,on});
-      if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); await reloadTrip(); toast(label+(on?": our picks are on":": suggestions only")) }
+      if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); await reloadTrip(); toast(label+(on?": AI picks are on":": suggestions only")) }
       else if(j&&j.error==="code") lockOut(CHANGED);
       else { yes.disabled=false; p.textContent="Couldn't change that. Try again in a moment." } };
     row.append(no,yes); a.append(p,row); li.after(a); yes.focus() }
@@ -1004,7 +1090,7 @@ function openSettings(){
   seg.onclick=e=>{ const b=e.target.closest("button"); if(b&&b.dataset.c!==cur) setCur(b.dataset.c) };
   disp.append(cbt,el("span","set-lbl","Prices In"),seg); c.appendChild(disp);
   c.appendChild(el("p","sg-l","How Scoring Works"));
-  const lg=el("div","set-key"); lg.innerHTML='<span class="key"><i class="k3"></i>Must 3<i class="k2"></i>I want 2<i class="k1"></i>Meh 1<i class="k0"></i>Nah 0</span>'; c.appendChild(lg);
+  const lg=el("div","set-key"); lg.innerHTML='<span class="key"><i class="k3"></i>Must 3<i class="k2"></i>I want 1<i class="k1"></i>Meh 0<i class="k0"></i>Nah -1</span>'; c.appendChild(lg);
   c.appendChild(el("p","sg-help","A card's total adds up everyone's points, and Ranking sorts by it. The total's color is the average vote; a Tabelog score's color is its rank within its own region (3.5+ is very good, 3.8+ exceptional)."));
   const r=el("div","sg-row"), x=el("button","sg-cancel","Close"); x.type="button"; x.onclick=close; r.appendChild(x); c.appendChild(r);
   document.body.appendChild(d); document.body.classList.add("lb-open");
@@ -1111,8 +1197,8 @@ function boot(){
     PAGE=startPage();
     const swap=()=>{
       stopField(); gate.remove(); document.body.classList.remove("gv-locked"); window.scrollTo(0,0);
-      mountBallot(); renderWho(); render(); renderSugs(); pace();
-      loadMaps(j.mapsApiKey).then(()=>google.maps.importLibrary("places")).then(lib=>{ placesLib=lib; pumpPhotos() }).catch(()=>{});
+      mountBallot(); renderWho(); renderGoals(); render(); renderSugs(); pace();
+      MAPS_KEY=j.mapsApiKey; startPhotos();
       setInterval(()=>{ if(document.visibilityState==="visible") loadVotes() },30000);
       document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") loadVotes() });
     };

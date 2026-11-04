@@ -56,18 +56,30 @@ def check_page(page):
     bad_dates = not (isinstance(dates, dict) and all(isinstance(dates.get(k, ""), str) for k in ("decided", "note")) and
                      all(isinstance(r, list) and all(isinstance(x, str) for x in r) for r in [dates.get("head", [])] + list(dates.get("rows", []))))
     # lodging: the stays in order, each {"id", "where", "when", "status": "booked" | "open"} plus optional nights, name,
-    # area, url, note. An open stay's options are the items with "stay" set to its id.
+    # area, url, note, and its Google place (placeId, q) for a Google Maps button. An open stay's options are the items
+    # with "stay" set to its id.
     bad_stays = not isinstance(stays, list) or any(not isinstance(x, dict) or not ITEM_RE.match(str(x.get("id", ""))) or
                                                    x.get("status") not in ("booked", "open") or
-                                                   not all(isinstance(x.get(k, ""), str) for k in ("where", "when", "name", "area", "url", "note")) or
+                                                   not all(isinstance(x.get(k, ""), str) for k in ("where", "when", "name", "area", "url", "note", "q")) or
+                                                   not re.match(r"^([A-Za-z0-9_-]{8,})?$", str(x.get("placeId", ""))) or
                                                    not isinstance(x.get("nights", 0), int) for x in stays)
     # placeId: a Google place id. photos: positions 0-9 in that place's Google photo list, best first.
     bad_place = [i.get("id") for i in items if "placeId" in i and not (isinstance(i["placeId"], str) and re.match(r"^[A-Za-z0-9_-]{8,}$", i["placeId"]))]
     bad_photos = [i.get("id") for i in items if "photos" in i and not (isinstance(i["photos"], list) and
                   all(isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 9 for n in i["photos"]))]
     # Optional labels the page sorts and filters on, and slot: a dedicated itinerary slot (true or e.g. "Fri dinner").
-    allowed = {"kind": {"meal", "sweets", "drinks", "coffee", "event"}, "tier": {"casual", "mid", "splurge"},
-               "group": {"specialty", "favorite", "tastes", "coffee", "event"}}
+    # categories: the places' sections, in order, each {"key", "label", "about" (what goes in it; the agent reads it),
+    # "thumbs"}; without them, app.DEFAULT_CATEGORIES. A place's "group" is a category key (any other shows under More to Try).
+    cats = page.get("categories")
+    if cats is not None:
+        ck = [c.get("key") for c in cats] if isinstance(cats, list) else []
+        if (not isinstance(cats, list) or not 1 <= len(cats) <= 12 or len(set(ck)) != len(ck)
+                or any(not isinstance(c, dict) or not isinstance(c.get("key"), str) or not re.match(r"^[a-z0-9][a-z0-9-]{0,23}$", c["key"])
+                       or c["key"] in ("locations", "dates", "lodging", "photos") or not isinstance(c.get("label"), str) or not 0 < len(c["label"]) <= 40
+                       or not isinstance(c.get("about", ""), str) or len(c.get("about", "")) > 200 or not isinstance(c.get("thumbs", False), bool) for c in cats)):
+            raise SystemExit('categories must be 1-12 of {"key": "a-z0-9-", "label": "...", "about": "...", "thumbs": true|false}')
+    cat_keys = [c["key"] for c in cats] if cats else ["specialty", "favorite", "tastes", "coffee", "event"]
+    allowed = {"kind": {"meal", "sweets", "drinks", "coffee", "event"}, "tier": {"casual", "mid", "splurge"}}
     bad_labels = [f"{i.get('id')}.{k}" for i in items for k, ok in allowed.items() if k in i and i[k] not in ok]
     bad_slot = [i.get("id") for i in items if "slot" in i and not (isinstance(i["slot"], bool) or (isinstance(i["slot"], str) and 0 < len(i["slot"]) <= 40))]
     bad_flags = [i.get("id") for i in items if "izakaya" in i and not isinstance(i["izakaya"], bool)]   # the Izakaya pill
@@ -79,9 +91,15 @@ def check_page(page):
     bad_time = [r for r, v in (when.items() if isinstance(when, dict) else [("time", None)])
                 if r not in (page.get("regions") or []) or not isinstance(v, list) or not all(isinstance(x, str) and span.match(x) for x in v)]
     sections = page.get("sections", {})
-    known = ("locations", "dates", "lodging", "specialty", "favorite", "tastes", "coffee", "event")   # must match app.SECTIONS
+    known = ("locations", "dates", "lodging", *cat_keys, "photos")   # must match app.switch_keys
     if not isinstance(sections, dict) or any(k not in known or not isinstance(v, bool) for k, v in sections.items()):
-        raise SystemExit(f"sections must map {known} to true (our picks) or false (suggestions only)")
+        raise SystemExit(f"sections must map {known} to true (AI picks; photos on) or false (suggestions only; photos off)")
+    # goals: {"primary": "...", "secondary": ["...", ...]}, the squad's goals (editable on the page; the agent reads them)
+    goals = page.get("goals", {})
+    if not (isinstance(goals, dict) and isinstance(goals.get("primary", ""), str) and len(goals.get("primary", "")) <= 120
+            and isinstance(goals.get("secondary", []), list) and len(goals.get("secondary", [])) <= 6
+            and all(isinstance(x, str) and len(x) <= 120 for x in goals.get("secondary", []))):
+        raise SystemExit('goals must be {"primary": "...", "secondary": ["...", ...]}: up to 6 secondary goals, each up to 120 characters')
     if "owner" in page and page["owner"] not in names:
         raise SystemExit("owner must be one of the travelers")
     if bad_stage or bad_dates or bad_stays:

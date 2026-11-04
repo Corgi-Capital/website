@@ -24,14 +24,25 @@ Routes
                                        run at once and anyone else's are "held" until the owner OKs them. 429 "limit" past
                                        the traveler's daily cap.
   POST /trips/{trip}/sections          body {"code", "name", "section", "on"} -> {"ok": true, "sections": {...},
-                                       "suggestions": [...]}. Turns a section's picks on, or off (suggestions only), for
-                                       everyone; logged in the updates. The page data carries "sections": {key: bool}.
+                                       "suggestions": [...]}. Turns a section's AI picks on, or off (suggestions only), or
+                                       the trip's Google photos ("photos"), for everyone; logged in the updates. The page
+                                       data carries "sections": {key: bool}.
+  POST /trips/{trip}/categories        body {"code", "name", "categories": [{"key" (an existing one's; none for a new one),
+                                       "label", "about"}]} -> {"ok": true, "categories": [...], "suggestions": [...]}. The
+                                       places' categories, in order, for everyone: rename, describe (the agent reads "about"
+                                       to sort suggestions), add, reorder or remove. Logged. The page data carries
+                                       "categories"; places in a removed one show under More to Try.
+  POST /trips/{trip}/goals             body {"code", "name", "primary", "secondary"} -> {"ok": true, "goals": {...},
+                                       "suggestions": [...]}. The squad's goals for the trip: a primary goal and up to 6
+                                       secondary ones, for everyone; logged. The page data carries "goals", and the agent
+                                       reads them with every suggestion, Group Tastes update and search.
   POST /trips/{trip}/approve           body {"code", "owner", "ids", "run"} -> {"ok": true, "suggestions": [...]}. The owner
                                        runs held suggestions (run: true) or skips them (run: false). 403 "owner" without the
                                        owner's code.
   GET  /usage                          -> {"ok": true, "month": "YYYY-MM", "used": {...}, "limits": {...}}
   POST /usage                          body {"trip", "code", "kinds": ["search", "photo"]} -> {"ok": true}; 403 "code" without a
-                                       valid password; 429 {"ok": false, "error": "limit"} only when the month's budget is spent;
+                                       valid password; 409 {"ok": false, "error": "off"} while the trip's photos are switched
+                                       off; 429 {"ok": false, "error": "limit"} only when the month's budget is spent;
                                        503 {"ok": false, "error": "busy"} on a passing error.
                                        Reserves one unit of each kind against this month's Google Maps budget.
 
@@ -39,7 +50,12 @@ Table layout (single table, on-demand)
   pk = "trip#<trip>", sk = "meta"          travelers [names], code_hash (see code_hash), owner_hash (the owner's code, same
                                            hash), page (page data as JSON), rev, created, updated
   pk = "trip#<trip>", sk = "ballot#<name>" votes {item_id: int}, up [item ids with this traveler's thumbs up], updated
-  pk = "trip#<trip>", sk = "sections"      s_<section> (bool): a section flipped on the page; wins over the trip file's "sections"
+  pk = "trip#<trip>", sk = "sections"      s_<section> (bool): a section (or "photos") flipped on the page; wins over the trip
+                                           file's "sections"
+  pk = "trip#<trip>", sk = "goals"         primary, secondary [..], by, updated: the squad's goals as edited on the page; wins over
+                                           the trip file's "goals"
+  pk = "trip#<trip>", sk = "categories"    list [{key, label, about, thumbs}], by, updated: the categories as edited on the page;
+                                           wins over the trip file's "categories"
   pk = "trip#<trip>", sk = "removed#<item>" by, at, place: a Group Tastes or Coffee spot the group took off the page. The page data
                                            keeps the spot, so undo (or suggesting it again) brings it back as it was.
   pk = "trip#<trip>", sk = "sugg#<ms>-<r>" by, text, why, kind (spot, taste, remove, section), status (queued, working, added,
@@ -67,12 +83,24 @@ SSM = boto3.client("ssm")   # the Maps key and the agent's Claude credential, as
 # 2026-11-04, for his private trip page). "owner": anyone else's wait for the owner's OK, given on a device holding the
 # owner's code (an owner link); for a page where the owner's Claude subscription mustn't run other people's requests.
 AGENT_HOLD = os.environ.get("AGENT_HOLD", "none")
-# The page's sections. Each shows our picks plus everyone's suggestions (on), or suggestions only (off: our picks are
-# hidden there and the agent stops adding to it; suggestions are still looked up). Anyone can flip one.
-SECTIONS = ("locations", "dates", "lodging", "specialty", "favorite", "tastes", "coffee", "event")
-# The sections Suggest Spot and the agent fill. Their cards get thumbs: up for a good pick, down to take one off the list
-# while no one wants it.
-THUMB_GROUPS = ("tastes", "coffee")
+# The page's sections: the plan's parts (STAGES), then the places' categories. Each shows AI picks plus everyone's
+# suggestions (on), or suggestions only (off: AI picks are hidden there and the agent stops adding to it; suggestions
+# are still looked up). Anyone can flip one, and so the trip's "photos" (Google photos on the cards; off, the trip's
+# pages make no Google calls, which saves the month's budget).
+STAGES = ("locations", "dates", "lodging")
+# The places' categories, in order, each {"key", "label", "about": what goes in it (the agent reads it to sort
+# suggestions), "thumbs": its cards get thumbs (up: a good pick; down: off the list while no one wants it)}. A trip's
+# own list, from its file or edited on the page, replaces these.
+DEFAULT_CATEGORIES = [
+    {"key": "specialty", "label": "Regional Specialties", "about": "The dish or drink a region is famous for, at the places known for it.", "thumbs": False},
+    {"key": "favorite", "label": "Local Favorites", "about": "Where locals go: everyday places with regulars.", "thumbs": False},
+    {"key": "tastes", "label": "Group Tastes", "about": "Places picked for how this group eats and drinks. Most suggestions belong here.", "thumbs": True},
+    {"key": "coffee", "label": "Coffee", "about": "Cafes, coffee stands and roasters, where coffee is the reason to go.", "thumbs": True},
+    {"key": "event", "label": "Events", "about": "Anything to do, see or shop for: stores, sights, activities, onsen, festivals.", "thumbs": False},
+]
+CAT_MAX, CAT_LABEL_MAX, CAT_ABOUT_MAX = 12, 40, 200
+CAT_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
+GOAL_MAX, GOALS_MAX = 120, 6   # characters per goal; secondary goals
 LAMBDA = boto3.client("lambda")
 # Each traveler's daily cap on suggestions (Pacific time). The agent's runs use the owner's Claude plan, so a cap bounds
 # them, and each traveler has their own, so one busy traveler never uses up the others'.
@@ -185,7 +213,9 @@ def _page(trip, meta):
     if gone:
         page["items"] = [i for i in page.get("items", []) if i.get("id") not in gone]
     page["agentHold"] = AGENT_HOLD == "owner"   # the page says suggestions wait for the owner's OK
-    page["sections"] = _sections(trip, page)
+    page["categories"] = _categories(trip, page)
+    page["sections"] = _sections(trip, page, page["categories"])
+    page["goals"] = _goals(trip, page)
     doc = _tastes(trip)
     if doc:   # the doc, once anyone has commented, wins over the trip file's starting text
         page.update(tastes=doc.get("brief", page.get("tastes", "")), tastesLine=doc.get("line", page.get("tastesLine", "")))
@@ -251,24 +281,105 @@ def _suggest(trip, meta, body):
     return _resp(200, {"ok": True, "suggestions": _suggestions(trip), "held": held})
 
 
-def _sections(trip, page):
-    """Each section's state: True shows our picks, False is suggestions only. The trip file's "sections" sets where it
-    starts; a flip on the page wins."""
-    on = {k: True for k in SECTIONS}
-    on.update({k: v for k, v in (page.get("sections") or {}).items() if k in SECTIONS and isinstance(v, bool)})
+def _categories(trip, page):
+    """The trip's categories for its places, in order: the page's edit wins over the trip file's "categories", which win
+    over DEFAULT_CATEGORIES."""
+    row = TABLE.get_item(Key={"pk": f"trip#{trip}", "sk": "categories"}, ConsistentRead=True).get("Item") or {}
+    cats = row.get("list") or page.get("categories") or DEFAULT_CATEGORIES
+    return [{"key": str(c["key"]), "label": str(c.get("label") or c["key"]), "about": str(c.get("about") or ""), "thumbs": bool(c.get("thumbs"))}
+            for c in cats]
+
+
+def switch_keys(cats):
+    """What can be switched: the plan's parts, the categories, and the trip's photos."""
+    return STAGES + tuple(c["key"] for c in cats) + ("photos",)
+
+
+def _sections(trip, page, cats):
+    """Each switch's state. A section: True shows AI picks, False is suggestions only. "photos": Google photos on the
+    cards. The trip file's "sections" sets where each starts; a flip on the page wins."""
+    keys = switch_keys(cats)
+    on = {k: True for k in keys}
+    on.update({k: v for k, v in (page.get("sections") or {}).items() if k in keys and isinstance(v, bool)})
     row = TABLE.get_item(Key={"pk": f"trip#{trip}", "sk": "sections"}, ConsistentRead=True).get("Item") or {}
-    on.update({k: bool(row[f"s_{k}"]) for k in SECTIONS if f"s_{k}" in row})
+    on.update({k: bool(row[f"s_{k}"]) for k in keys if f"s_{k}" in row})
     return on
 
 
+def _set_categories(trip, meta, body):
+    """Anyone edits the places' categories, for everyone: renames or describes one (the agent reads "about" to sort
+    suggestions), adds, reorders or removes them. The body lists them all, in order; a kept one carries its key, a new
+    one none (it gets one from its label). Places in a removed category show under More to Try. Logged; pages reload."""
+    if not _code_ok(meta, body.get("code")):
+        return _resp(403, {"ok": False, "error": "code"})
+    name = body.get("name")
+    if name not in meta.get("travelers", []):
+        return _resp(400, {"ok": False, "error": "name"})
+    old = {c["key"]: c for c in _categories(trip, json.loads(meta.get("page") or "{}"))}
+    raw, tidy = body.get("categories"), (lambda s: " ".join(s.split()) if isinstance(s, str) else None)
+    if not isinstance(raw, list) or not 1 <= len(raw) <= CAT_MAX or not all(isinstance(c, dict) for c in raw):
+        return _resp(400, {"ok": False, "error": "categories"})
+    out, taken = [], set(STAGES) | {"photos"}
+    for c in raw:
+        label, about, key = tidy(c.get("label")), tidy(c.get("about") or ""), c.get("key")
+        if not label or len(label) > CAT_LABEL_MAX or about is None or len(about) > CAT_ABOUT_MAX or (key is not None and key not in old):
+            return _resp(400, {"ok": False, "error": "categories"})
+        if key is None:   # a new category: a key from its label, never one that's in use
+            base = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:20] or "cat"
+            key, n = base, 2
+            while key in taken or key in old:
+                key, n = f"{base}-{n}", n + 1
+        if key in taken:
+            return _resp(400, {"ok": False, "error": "categories"})
+        taken.add(key)
+        out.append({"key": key, "label": label, "about": about, "thumbs": old[key]["thumbs"] if key in old else True})
+    now = int(time.time())
+    TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": "categories", "list": out, "by": name, "updated": now})
+    TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": f"sugg#{int(time.time() * 1000):013d}-{os.urandom(2).hex()}", "by": name,
+                         "text": ", ".join(c["label"] for c in out)[:200], "kind": "categories", "status": "updated", "created": now, "updated": now})
+    bump_rev(trip)
+    return _resp(200, {"ok": True, "categories": out, "suggestions": _suggestions(trip)})
+
+
+def _goals(trip, page):
+    """The squad's goals: {"primary": "...", "secondary": [...]}. The page's edit wins over the trip file's "goals"."""
+    row = TABLE.get_item(Key={"pk": f"trip#{trip}", "sk": "goals"}, ConsistentRead=True).get("Item")
+    g = row or page.get("goals") or {}
+    return {"primary": str(g.get("primary") or ""), "secondary": [str(x) for x in (g.get("secondary") or [])]}
+
+
+def _set_goals(trip, meta, body):
+    """Anyone edits the squad's goals, for everyone: a primary goal (needed) and up to 6 secondary ones. Logged; open
+    pages reload."""
+    if not _code_ok(meta, body.get("code")):
+        return _resp(403, {"ok": False, "error": "code"})
+    name = body.get("name")
+    if name not in meta.get("travelers", []):
+        return _resp(400, {"ok": False, "error": "name"})
+    tidy = lambda s: " ".join(s.split()) if isinstance(s, str) else None
+    primary, more = tidy(body.get("primary")), body.get("secondary")
+    secondary = [tidy(x) for x in more] if isinstance(more, list) else None
+    if (not primary or len(primary) > GOAL_MAX or secondary is None or len(secondary) > GOALS_MAX
+            or any(x is None or len(x) > GOAL_MAX for x in secondary)):
+        return _resp(400, {"ok": False, "error": "goals"})
+    secondary, now = [x for x in dict.fromkeys(secondary) if x], int(time.time())
+    TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": "goals", "primary": primary, "secondary": secondary, "by": name, "updated": now})
+    TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": f"sugg#{int(time.time() * 1000):013d}-{os.urandom(2).hex()}", "by": name,
+                         "text": primary, "kind": "goals", "status": "updated", "created": now, "updated": now})
+    bump_rev(trip)
+    return _resp(200, {"ok": True, "goals": {"primary": primary, "secondary": secondary}, "suggestions": _suggestions(trip)})
+
+
 def _set_section(trip, meta, body):
-    """Anyone turns a section's picks on or off, for everyone (the page asks them to confirm). Logged; open pages reload."""
+    """Anyone turns a section's AI picks on or off (the page asks them to confirm), or the trip's photos, for everyone.
+    Logged; open pages reload."""
     if not _code_ok(meta, body.get("code")):
         return _resp(403, {"ok": False, "error": "code"})
     name, key, on = body.get("name"), body.get("section"), body.get("on")
     if name not in meta.get("travelers", []):
         return _resp(400, {"ok": False, "error": "name"})
-    if key not in SECTIONS or not isinstance(on, bool):
+    page = json.loads(meta.get("page") or "{}")
+    if key not in switch_keys(_categories(trip, page)) or not isinstance(on, bool):
         return _resp(400, {"ok": False, "error": "section"})
     now = int(time.time())
     TABLE.update_item(Key={"pk": f"trip#{trip}", "sk": "sections"}, UpdateExpression="SET #k = :v, updated = :u",
@@ -276,7 +387,7 @@ def _set_section(trip, meta, body):
     TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": f"sugg#{int(time.time() * 1000):013d}-{os.urandom(2).hex()}", "by": name,
                          "text": key, "kind": "section", "status": "on" if on else "off", "created": now, "updated": now})
     bump_rev(trip)
-    return _resp(200, {"ok": True, "sections": _sections(trip, json.loads(meta.get("page") or "{}")), "suggestions": _suggestions(trip)})
+    return _resp(200, {"ok": True, "sections": _sections(trip, page, _categories(trip, page)), "suggestions": _suggestions(trip)})
 
 
 def take_daily(trip, n, who):
@@ -328,7 +439,8 @@ def _remove(trip, meta, body):
         return _resp(400, {"ok": False, "error": "name"})
     items = {i.get("id"): i for i in json.loads(meta.get("page") or "{}").get("items", [])}
     it = items.get(iid) if isinstance(iid, str) else None
-    if not it or it.get("group") not in THUMB_GROUPS or it.get("stage"):
+    thumbed = {c["key"] for c in _categories(trip, json.loads(meta.get("page") or "{}")) if c["thumbs"]}
+    if not it or it.get("group") not in thumbed or it.get("stage"):
         return _resp(400, {"ok": False, "error": "item"})
     key, now = {"pk": f"trip#{trip}", "sk": f"removed#{iid}"}, int(time.time())
     if undo:
@@ -390,8 +502,11 @@ def handler(event, _context):
             except (json.JSONDecodeError, AttributeError):
                 return _resp(400, {"ok": False, "error": "json"})
             trip = body.get("trip")
-            if not isinstance(trip, str) or not TRIP_RE.match(trip) or not _code_ok(_meta(trip), body.get("code")):
+            meta = _meta(trip) if isinstance(trip, str) and TRIP_RE.match(trip) else None
+            if not _code_ok(meta, body.get("code")):
                 return _resp(403, {"ok": False, "error": "code"})
+            if not _sections(trip, json.loads(meta.get("page") or "{}"), [])["photos"]:
+                return _resp(409, {"ok": False, "error": "off"})   # photos are switched off: a page loaded before the switch stops
             kinds = sorted(set(k for k in kinds if isinstance(k, str) and k in LIMITS)) if isinstance(kinds, list) else []
             if not kinds:
                 return _resp(400, {"ok": False, "error": "kinds"})
@@ -417,12 +532,12 @@ def handler(event, _context):
             return _resp(200, {"ok": True, **live})
         return _resp(200, {"ok": True, "trip": _page(trip, meta), "mapsApiKey": _get_maps_key(), **live})
 
-    if method == "POST" and len(parts) == 3 and parts[2] in ("suggestions", "remove", "approve", "sections"):
+    if method == "POST" and len(parts) == 3 and parts[2] in ("suggestions", "remove", "approve", "sections", "goals", "categories"):
         try:
             body = json.loads(event.get("body") or "{}")
         except json.JSONDecodeError:
             return _resp(400, {"ok": False, "error": "json"})
-        route = {"suggestions": _suggest, "remove": _remove, "approve": _approve, "sections": _set_section}[parts[2]]
+        route = {"suggestions": _suggest, "remove": _remove, "approve": _approve, "sections": _set_section, "goals": _set_goals, "categories": _set_categories}[parts[2]]
         return route(trip, meta, body if isinstance(body, dict) else {})
 
     if method == "POST" and len(parts) == 3 and parts[2] == "ballots":

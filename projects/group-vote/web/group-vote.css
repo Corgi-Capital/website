@@ -32,6 +32,18 @@ button{font:inherit;color:inherit;cursor:pointer}
 .lock:hover{color:var(--gold)}
 .hd h1{margin:30px 0 12px;font:600 clamp(40px,6.4vw,68px)/.98 var(--display);letter-spacing:.005em;text-wrap:balance}
 #intro{margin:0;max-width:70ch;color:var(--muted);font-size:15px;line-height:1.65}
+/* Squad Goals: what the trip is for, under the intro. Anyone can edit them; the agent reads them. */
+.goals{max-width:640px;margin-top:18px;padding:12px 16px 14px;border:1px solid var(--gold-line);border-radius:12px;background:linear-gradient(180deg,var(--gold-wash),transparent 75%)}
+.goals-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.goals-t{font:400 11px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--gold-2)}
+.goals-edit{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:4px 13px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--muted);font:500 12.5px var(--body);cursor:pointer}
+.goals-edit:hover{border-color:var(--gold-line);color:var(--ink)}
+.goal-1{display:flex;align-items:center;gap:9px;margin:6px 0 0;font:600 26px/1.2 var(--display);color:var(--ink)}
+.goal-1 .ic{width:17px;height:17px;color:var(--gold)}
+.goal-2{margin:6px 0 0;padding:0 0 0 26px;color:var(--muted);font-size:14.5px;line-height:1.6}
+.goal-2 li::marker{color:var(--gold-dim)}
+.goals-none{margin:6px 0 0;color:var(--faint);font-size:14px}
+.lodge-links{margin-top:10px}
 .jump{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
 .jump[hidden]{display:none}
 .jump a{display:inline-flex;align-items:baseline;gap:7px;padding:7px 14px;border:1px solid var(--gold-line);border-radius:999px;color:var(--ink);font-size:14px;text-decoration:none}
@@ -69,8 +81,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tab[aria-current="page"] b{font-weight:700}
 .tab .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-right:-5px;padding:0 6px;border-radius:999px;background:#e5484d;color:#fff;font:700 11px/1 var(--mono)}
 /* A settled part of the plan: a gold lock where the red count would be. */
-.tab .lock{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-5px;border-radius:999px;background:var(--gold);box-shadow:0 0 0 1px rgba(11,11,11,.5)}
-.tab .lock .ic,.tab[aria-current="page"] .lock .ic{width:11px;height:11px;color:var(--bg);stroke-width:2}
+.tab .tlock{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-5px;padding:0;border-radius:999px;background:var(--gold);box-shadow:0 0 0 1px rgba(11,11,11,.5)}
+.tab .tlock .ic,.tab[aria-current="page"] .tlock .ic{width:12px;height:12px;color:var(--bg);stroke-width:1.9}
 .eats-tools{display:flex;align-items:center;gap:8px}
 .fbtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:5px 13px 5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:13.5px;white-space:nowrap}
 .fbtn .ic{width:14px;height:14px}
@@ -95,8 +107,8 @@ button{font:inherit;color:inherit;cursor:pointer}
   .tab .ic{width:17px;height:17px}
   .tab b{font-weight:500}
   .tab .cnt{position:absolute;top:3px;right:4px;min-width:17px;height:17px;margin:0;padding:0 4px;font-size:10px}
-  .tab .lock{position:absolute;top:3px;right:4px;width:17px;height:17px;margin:0}
-  .tab .lock .ic,.tab[aria-current="page"] .lock .ic{width:10px;height:10px}
+  .tab .tlock{position:absolute;top:3px;right:4px;width:17px;height:17px;margin:0}
+  .tab .tlock .ic,.tab[aria-current="page"] .tlock .ic{width:11px;height:11px}
 }
 .who .chip{min-height:40px;padding:7px 17px;font-size:15px}
 .who{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-radius:999px}
@@ -390,6 +402,7 @@ body.lb-open{overflow:hidden}
 .sg-l span{letter-spacing:.04em;text-transform:none;color:var(--faint)}
 .sg textarea,.sg input{display:block;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:400 15px/1.5 var(--body)}
 .sg textarea{min-height:104px;resize:vertical;font:400 13.5px/1.55 var(--mono)}
+.sg textarea.gl{min-height:84px;font:400 15px/1.5 var(--body)}
 .sg textarea:focus,.sg input:focus{outline:none;border-color:var(--gold)}
 .sg-msg{min-height:1.5em;margin:10px 0 0;color:var(--meh);font-size:13px}
 .sg-row{display:flex;justify-content:flex-end;gap:10px;margin-top:6px}
