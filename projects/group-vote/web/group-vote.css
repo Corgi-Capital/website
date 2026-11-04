@@ -4,6 +4,9 @@
 :root{
   --bg:#0b0b0b; --surface:#131313; --surface-2:#1b1b1b; --ink:#f0ece0; --muted:rgba(240,236,224,.7); --faint:rgba(240,236,224,.46);
   --line:rgba(240,236,224,.12); --gold:#c9a55a; --gold-2:#e2c88e; --gold-dim:rgba(201,165,90,.62); --gold-line:rgba(201,165,90,.32); --gold-wash:rgba(201,165,90,.12);
+  /* Badges in metal, to sit with the gold: garnet for a count of what's left, gilt for a lock. */
+  --garnet:linear-gradient(150deg,#d8707a 0%,#a83643 46%,#7a1d29 100%); --gilt:linear-gradient(150deg,#f0dcaa 0%,#c9a55a 50%,#97743a 100%);
+  --sheen:inset 0 1px 0 rgba(255,255,255,.3),inset 0 -1px 0 rgba(0,0,0,.25),0 0 0 1px rgba(11,11,11,.55);
   /* Vote scale, 3, 2, 1, 0 points. Chosen by measured color difference (CIEDE2000) with each color readable as text on
      the vote buttons and under black text when filled. Standard: green, light green, yellow, red. Color-blind (the
      toggle, html.cb): blue, pale blue, pale yellow, orange, which stays apart for red-green and blue-yellow color
@@ -43,7 +46,6 @@ button{font:inherit;color:inherit;cursor:pointer}
 .goal-2{margin:6px 0 0;padding:0 0 0 26px;color:var(--muted);font-size:14.5px;line-height:1.6}
 .goal-2 li::marker{color:var(--gold-dim)}
 .goals-none{margin:6px 0 0;color:var(--faint);font-size:14px}
-.lodge-links{margin-top:10px}
 .jump{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
 .jump[hidden]{display:none}
 .jump a{display:inline-flex;align-items:baseline;gap:7px;padding:7px 14px;border:1px solid var(--gold-line);border-radius:999px;color:var(--ink);font-size:14px;text-decoration:none}
@@ -79,9 +81,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tab[aria-current="page"]{border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2)}
 .tab[aria-current="page"] .ic{color:var(--gold-2)}
 .tab[aria-current="page"] b{font-weight:700}
-.tab .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-right:-5px;padding:0 6px;border-radius:999px;background:#e5484d;color:#fff;font:700 11px/1 var(--mono)}
+.tab .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-right:-5px;padding:0 6px;border-radius:999px;background:var(--garnet);box-shadow:var(--sheen);color:#fff4ee;font:700 11px/1 var(--mono);text-shadow:0 1px 1px rgba(60,8,14,.45)}
 /* A settled part of the plan: a gold lock where the red count would be. */
-.tab .tlock{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-5px;padding:0;border-radius:999px;background:var(--gold);box-shadow:0 0 0 1px rgba(11,11,11,.5)}
+.tab .tlock{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-5px;padding:0;border-radius:999px;background:var(--gilt);box-shadow:var(--sheen)}
 .tab .tlock .ic,.tab[aria-current="page"] .tlock .ic{width:12px;height:12px;color:var(--bg);stroke-width:1.9}
 .eats-tools{display:flex;align-items:center;gap:8px}
 .fbtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:5px 13px 5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:13.5px;white-space:nowrap}
@@ -133,7 +135,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .filters::-webkit-scrollbar{display:none}
 .filters .chip{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:4px 13px;font-size:13px}
 /* Needs Rating's count of spots you haven't rated: a notification-red badge in either palette. */
-.chip .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin:-2px -5px -2px 1px;padding:0 6px;border-radius:999px;background:#e5484d;color:#fff;font:700 11px/1 var(--mono);letter-spacing:0}
+.chip .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin:-2px -5px -2px 1px;padding:0 6px;border-radius:999px;background:var(--garnet);box-shadow:var(--sheen);color:#fff4ee;font:700 11px/1 var(--mono);letter-spacing:0;text-shadow:0 1px 1px rgba(60,8,14,.45)}
 .chip .cnt[hidden]{display:none}   /* nothing left to rate: no badge */
 .filters .chip[aria-pressed="true"]{border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2);font-weight:500}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-left:auto}
@@ -162,6 +164,26 @@ button{font:inherit;color:inherit;cursor:pointer}
 .dates-t tbody th{font:600 14px var(--body)}
 .dates-t tbody tr{border-top:1px solid var(--line)}
 .dates-t tr.me th{color:var(--gold)}
+/* Each person's flights under the dates: the flight numbers on one line, the legs inside. */
+.flights{max-width:640px;margin-top:16px}
+.flights .sg-l{margin:0 0 2px}
+.fp{margin-top:8px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.fp summary{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;padding:11px 14px;cursor:pointer;list-style:none}
+.fp summary::-webkit-details-marker{display:none}
+.fp summary::after{content:"";flex:none;align-self:center;width:7px;height:7px;margin:0 2px 3px auto;border:solid var(--gold-dim);border-width:0 1.5px 1.5px 0;transform:rotate(45deg);transition:transform .2s}
+.fp[open] summary::after{margin-bottom:-3px;transform:rotate(225deg)}
+.fp summary b{font:600 15px var(--body)}
+.fp.me summary b{color:var(--gold)}
+.fp-nums{color:var(--muted);font:400 12.5px var(--mono);letter-spacing:.04em}
+.fp-l{margin:0;padding:0 14px 6px;list-style:none}
+.fp-l li{padding:10px 0;border-top:1px solid var(--line)}
+.fp-top{display:flex;align-items:baseline;gap:10px}
+.fp-top b{font:600 13.5px var(--mono);color:var(--gold-2)}
+.fp-top span{color:var(--faint);font:400 12px var(--mono);letter-spacing:.06em}
+.fp-rt{margin-top:3px;font-size:14.5px}
+.fp-tm{color:var(--muted);font:400 12.5px/1.6 var(--mono)}
+.fp-note{color:var(--faint);font-size:12.5px;font-style:italic}
+@media (prefers-reduced-motion:reduce){.fp summary::after{transition:none}}
 /* Each stay on one row: booked ones settled, the open one gold, with its options as cards below. */
 .lodges{display:grid;gap:10px;max-width:780px;margin:12px 0 0;padding:0;list-style:none}
 .lodge{display:flex;align-items:flex-start;gap:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
@@ -403,6 +425,19 @@ body.lb-open{overflow:hidden}
 .sg textarea,.sg input{display:block;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:400 15px/1.5 var(--body)}
 .sg textarea{min-height:104px;resize:vertical;font:400 13.5px/1.55 var(--mono)}
 .sg textarea.gl{min-height:84px;font:400 15px/1.5 var(--body)}
+/* Categories: each a name, what goes in it, and move or remove buttons. */
+.cat-edit{margin-top:10px}
+.cat-l{margin:6px 0 0;padding:0;list-style:none}
+.cat-row{padding:10px 0;border-top:1px solid var(--line)}
+.cat-top{display:flex;align-items:center;gap:6px}
+.sg .cat-label{flex:1;width:auto;min-width:0;font-weight:500}
+.sg .cat-about{margin-top:6px;padding:8px 12px;color:var(--muted);font-size:13.5px}
+.cat-b{flex:none;min-width:36px;height:36px;padding:0 8px;border:1px solid var(--line);border-radius:9px;background:none;color:var(--muted);font:500 14px var(--body);cursor:pointer}
+.cat-b:hover{border-color:var(--gold-line);color:var(--ink)}
+.cat-row.gone .cat-label,.cat-row.gone .cat-about{opacity:.4;text-decoration:line-through}
+.cat-note{margin:5px 0 0;color:var(--meh);font-size:12.5px}
+.cat-note:empty{display:none}
+.cat-add{margin-top:12px}
 .sg textarea:focus,.sg input:focus{outline:none;border-color:var(--gold)}
 .sg-msg{min-height:1.5em;margin:10px 0 0;color:var(--meh);font-size:13px}
 .sg-row{display:flex;justify-content:flex-end;gap:10px;margin-top:6px}

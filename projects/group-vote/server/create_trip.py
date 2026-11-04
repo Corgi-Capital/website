@@ -53,6 +53,11 @@ def check_page(page):
     # dates: {"decided": "Thu Feb 18 - Mon Mar 1, 2027", "note": "...", "head": ["", "Lands", "Flies Home"], "rows": [[...]]};
     # without "decided", the trip-date options (stage "dates") are on the ballot.
     dates = page.get("dates", {})
+    # dates.flights: {"<traveler>": [{"date", "flight", "route", "times", "note"?}, ...]}, shown collapsed per person
+    fl = dates.get("flights", {}) if isinstance(dates, dict) else {}
+    if not isinstance(fl, dict) or any(not isinstance(v, list) or any(not isinstance(x, dict) or not all(isinstance(x.get(k, ""), str) for k in ("date", "flight", "route", "times", "note"))
+                                                                    for x in v) for v in fl.values()):
+        raise SystemExit('dates.flights must map travelers to lists of {"date", "flight", "route", "times", "note"} (text)')
     bad_dates = not (isinstance(dates, dict) and all(isinstance(dates.get(k, ""), str) for k in ("decided", "note")) and
                      all(isinstance(r, list) and all(isinstance(x, str) for x in r) for r in [dates.get("head", [])] + list(dates.get("rows", []))))
     # lodging: the stays in order, each {"id", "where", "when", "status": "booked" | "open"} plus optional nights, name,
@@ -100,6 +105,8 @@ def check_page(page):
             and isinstance(goals.get("secondary", []), list) and len(goals.get("secondary", [])) <= 6
             and all(isinstance(x, str) and len(x) <= 120 for x in goals.get("secondary", []))):
         raise SystemExit('goals must be {"primary": "...", "secondary": ["...", ...]}: up to 6 secondary goals, each up to 120 characters')
+    if not isinstance(page.get("photosOffNote", ""), str) or len(page.get("photosOffNote", "")) > 60:
+        raise SystemExit("photosOffNote (why photos are off, e.g. \"Until final vote day\") must be text up to 60 characters")
     if "owner" in page and page["owner"] not in names:
         raise SystemExit("owner must be one of the travelers")
     if bad_stage or bad_dates or bad_stays:

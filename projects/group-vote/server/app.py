@@ -39,10 +39,12 @@ Routes
   POST /trips/{trip}/approve           body {"code", "owner", "ids", "run"} -> {"ok": true, "suggestions": [...]}. The owner
                                        runs held suggestions (run: true) or skips them (run: false). 403 "owner" without the
                                        owner's code.
+  GET  /trips/{trip}/map?code=...      -> {"ok": true, "points": {place id: [lat, lng]}}: each place's coordinates, for the
+                                       Trip Map. Looked up from Google by place id (location only) and kept up to 25 days.
   GET  /usage                          -> {"ok": true, "month": "YYYY-MM", "used": {...}, "limits": {...}}
-  POST /usage                          body {"trip", "code", "kinds": ["search", "photo"]} -> {"ok": true}; 403 "code" without a
-                                       valid password; 409 {"ok": false, "error": "off"} while the trip's photos are switched
-                                       off; 429 {"ok": false, "error": "limit"} only when the month's budget is spent;
+  POST /usage                          body {"trip", "code", "kinds": ["search", "photo", "map"]} -> {"ok": true}; 403 "code" without a
+                                       valid password; 409 {"ok": false, "error": "off"} for photos or lookups while the
+                                       trip's photos are switched off (a map load still goes); 429 {"ok": false, "error": "limit"} only when the month's budget is spent;
                                        503 {"ok": false, "error": "busy"} on a passing error.
                                        Reserves one unit of each kind against this month's Google Maps budget.
 
@@ -62,6 +64,7 @@ Table layout (single table, on-demand)
                                            duplicate, rejected, failed; held, declined; removed, restored), reason, item (the card's id),
                                            restoredBy, created, updated
   pk = "trip#<trip>", sk = "suggday#<date>#<name>" count (that traveler's suggestions that day, Pacific time)
+  pk = "trip#<trip>", sk = "geo"           points {place id: [lat, lng, fetched at]}: coordinates for the Trip Map, kept up to 25 days
   pk = "usage#<YYYY-MM>", sk = "<kind>"    count (Google Maps calls made this month, Pacific time like Google billing)
 """
 import hashlib
@@ -70,6 +73,9 @@ import json
 import os
 import re
 import time
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -111,7 +117,12 @@ TRIP_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 ITEM_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 MAX_ITEMS = 300
 # Monthly ceilings, kept just under Google's free monthly usage (Text Search Pro 5,000; Place Photos 1,000).
-LIMITS = {"search": int(os.environ.get("SEARCH_MONTHLY_LIMIT", "4800")), "photo": int(os.environ.get("PHOTO_MONTHLY_LIMIT", "950"))}
+# Map loads (Dynamic Maps, 10,000 free) and coordinates (Place Details with location only, 10,000 free) have their own.
+LIMITS = {"search": int(os.environ.get("SEARCH_MONTHLY_LIMIT", "4800")), "photo": int(os.environ.get("PHOTO_MONTHLY_LIMIT", "950")),
+          "map": int(os.environ.get("MAP_MONTHLY_LIMIT", "9000")), "geo": int(os.environ.get("GEO_MONTHLY_LIMIT", "9000"))}
+PAGE_KINDS = ("search", "photo", "map")   # what a page may reserve; "geo" is the server's own
+GEO_KEEP = 25 * 86400   # Google's terms let an app keep coordinates from Places for up to 30 days
+PLACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,300}$")
 
 
 def _month():
@@ -159,6 +170,54 @@ def _reserve(kinds):
         if isinstance(e, ClientError) and e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
             return False
         raise
+
+
+def _reserve_n(kind, n):
+    """n units of one kind at once, unless that would pass its monthly limit. True if reserved."""
+    try:
+        TABLE.update_item(Key={"pk": f"usage#{_month()}", "sk": kind}, UpdateExpression="ADD #c :n",
+                          ConditionExpression="attribute_not_exists(#c) OR #c <= :most", ExpressionAttributeNames={"#c": "count"},
+                          ExpressionAttributeValues={":n": n, ":most": LIMITS[kind] - n})
+        return True
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
+
+
+def _place_location(key, place_id):
+    """A place's coordinates from Google (Place Details, location only), or None."""
+    req = urllib.request.Request(f"https://places.googleapis.com/v1/places/{place_id}",
+                                 headers={"X-Goog-Api-Key": key, "Referer": "https://corgi-capital.com/", "X-Goog-FieldMask": "location"})
+    try:
+        with urllib.request.urlopen(req, timeout=4) as r:
+            loc = json.loads(r.read()).get("location") or {}
+        return (loc["latitude"], loc["longitude"]) if "latitude" in loc and "longitude" in loc else None
+    except Exception:
+        return None
+
+
+def _geo(trip, page):
+    """Each place's coordinates, for the Trip Map: {place id: [lat, lng]}. Looked up from Google by place id and kept up to
+    25 days (Google's terms allow 30). One call looks up at most 60 missing or old ones, in parallel, counted against the
+    month's "geo" budget; the rest come with the next call."""
+    now = int(time.time())
+    row = TABLE.get_item(Key={"pk": f"trip#{trip}", "sk": "geo"}, ConsistentRead=True).get("Item") or {}
+    old = row.get("points") or {}
+    have = {k: v for k, v in old.items() if now - int(v[2]) <= GEO_KEEP}
+    want = ({i["placeId"] for i in page.get("items", []) if isinstance(i.get("placeId"), str)}
+            | {x["placeId"] for x in page.get("lodging", []) if isinstance(x, dict) and isinstance(x.get("placeId"), str)})
+    need = sorted(p for p in want if p not in have and PLACE_ID_RE.match(p))[:60]
+    key = _get_maps_key() if need else None
+    if need and key and _reserve_n("geo", len(need)):
+        with ThreadPoolExecutor(max_workers=12) as ex:
+            for pid, loc in zip(need, ex.map(lambda x: _place_location(key, x), need)):
+                if loc:
+                    have[pid] = [Decimal(str(round(loc[0], 6))), Decimal(str(round(loc[1], 6))), now]
+    kept = {k: v for k, v in have.items() if k in want}
+    if kept != old:
+        TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": "geo", "points": kept, "updated": now})
+    return {k: [float(v[0]), float(v[1])] for k, v in kept.items()}
 
 
 def _resp(status, body):
@@ -505,11 +564,11 @@ def handler(event, _context):
             meta = _meta(trip) if isinstance(trip, str) and TRIP_RE.match(trip) else None
             if not _code_ok(meta, body.get("code")):
                 return _resp(403, {"ok": False, "error": "code"})
-            if not _sections(trip, json.loads(meta.get("page") or "{}"), [])["photos"]:
-                return _resp(409, {"ok": False, "error": "off"})   # photos are switched off: a page loaded before the switch stops
-            kinds = sorted(set(k for k in kinds if isinstance(k, str) and k in LIMITS)) if isinstance(kinds, list) else []
+            kinds = sorted(set(k for k in kinds if isinstance(k, str) and k in PAGE_KINDS)) if isinstance(kinds, list) else []
             if not kinds:
                 return _resp(400, {"ok": False, "error": "kinds"})
+            if {"photo", "search"} & set(kinds) and not _sections(trip, json.loads(meta.get("page") or "{}"), [])["photos"]:
+                return _resp(409, {"ok": False, "error": "off"})   # photos are switched off: a page loaded before the switch stops
             try:
                 reserved = _reserve(kinds)
             except (BotoCoreError, ClientError):
@@ -531,6 +590,11 @@ def handler(event, _context):
         if qs.get("only") == "ballots":  # the page's refresh
             return _resp(200, {"ok": True, **live})
         return _resp(200, {"ok": True, "trip": _page(trip, meta), "mapsApiKey": _get_maps_key(), **live})
+
+    if method == "GET" and len(parts) == 3 and parts[2] == "map":   # the Trip Map's coordinates
+        if not _code_ok(meta, (event.get("queryStringParameters") or {}).get("code")):
+            return _resp(403, {"ok": False, "error": "code"})
+        return _resp(200, {"ok": True, "points": _geo(trip, json.loads(meta.get("page") or "{}"))})
 
     if method == "POST" and len(parts) == 3 and parts[2] in ("suggestions", "remove", "approve", "sections", "goals", "categories"):
         try:
