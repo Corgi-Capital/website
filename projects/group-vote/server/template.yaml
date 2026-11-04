@@ -14,14 +14,15 @@ Parameters:
     Type: Number
     Default: 4800
     Description: Max Google Places text searches per month (free allowance is 5,000)
-  MapsKeySecretName:
+  ParamPrefix:
     Type: String
-    Default: group-vote/maps-api-key
-    Description: Secrets Manager secret holding the Google Maps browser key as a plain string
-  ClaudeSecretName:
+    Default: group-vote
+    Description: Parameter Store prefix. /<prefix>/maps-api-key holds the Google Maps browser key and /<prefix>/claude-oauth-token the agent's Claude credential (a claude setup-token OAuth token, or an API key), both SecureString. Standard parameters are free; Secrets Manager charges $0.40 a month per secret.
+  AgentAuth:
     Type: String
-    Default: group-vote/claude-oauth-token
-    Description: Secrets Manager secret holding a Claude Code OAuth token (claude setup-token) as a plain string; the agent runs on that Claude subscription
+    Default: subscription
+    AllowedValues: [subscription, api]
+    Description: subscription (the credential is the owner's Claude subscription, so only the owner's own suggestions run at once and anyone else's wait for the owner's OK) or api (an API key, so everyone's suggestions run)
   ClaudeCodeVersion:
     Type: String
     Default: 2.1.317
@@ -56,17 +57,15 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref VotesTable
-          MAPS_SECRET_ID: !Ref MapsKeySecretName
+          MAPS_PARAM: !Sub "/${ParamPrefix}/maps-api-key"
+          AGENT_AUTH: !Ref AgentAuth
           PHOTO_MONTHLY_LIMIT: !Ref PhotoMonthlyLimit
           SEARCH_MONTHLY_LIMIT: !Ref SearchMonthlyLimit
           AGENT_FUNCTION: !Ref AgentFunction
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref VotesTable }
         - LambdaInvokePolicy: { FunctionName: !Ref AgentFunction }
-        - Statement:
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${MapsKeySecretName}-*"
+        - SSMParameterReadPolicy: { ParameterName: !Sub "${ParamPrefix}/maps-api-key" }
       FunctionUrlConfig:
         AuthType: NONE
         Cors:
@@ -75,7 +74,7 @@ Resources:
           AllowHeaders: [content-type]
           MaxAge: 3600
 
-  # Suggest Spot: reviews each suggestion with Claude Code (headless, on the Claude subscription in ClaudeSecretName)
+  # Suggest Spot: reviews each suggestion with Claude Code (headless, on the credential in /<ParamPrefix>/claude-oauth-token)
   # and adds the card. Invoked asynchronously by VoteFunction; fetches the Claude Code binary into /tmp on a cold start.
   AgentFunction:
     Type: AWS::Serverless::Function
@@ -94,8 +93,9 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref VotesTable
-          MAPS_SECRET_ID: !Ref MapsKeySecretName
-          CLAUDE_SECRET_ID: !Ref ClaudeSecretName
+          MAPS_PARAM: !Sub "/${ParamPrefix}/maps-api-key"
+          CLAUDE_PARAM: !Sub "/${ParamPrefix}/claude-oauth-token"
+          AGENT_AUTH: !Ref AgentAuth
           CLAUDE_CODE_VERSION: !Ref ClaudeCodeVersion
           CLAUDE_CODE_SHA512: !Ref ClaudeCodeSha512
           CLAUDE_MODEL: sonnet
@@ -103,12 +103,9 @@ Resources:
           SEARCH_MONTHLY_LIMIT: !Ref SearchMonthlyLimit
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref VotesTable }
+        - SSMParameterReadPolicy: { ParameterName: !Sub "${ParamPrefix}/maps-api-key" }
+        - SSMParameterReadPolicy: { ParameterName: !Sub "${ParamPrefix}/claude-oauth-token" }
         - Statement:
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource:
-                - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${MapsKeySecretName}-*"
-                - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ClaudeSecretName}-*"
             - Effect: Allow   # hands leftover suggestions to a fresh run of itself (by name, to avoid a circular reference)
               Action: lambda:InvokeFunction
               Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-AgentFunction*"

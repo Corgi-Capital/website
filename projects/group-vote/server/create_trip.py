@@ -1,8 +1,8 @@
 """Create or update a trip on the Group Vote server.
 
-A trip's page data (title, intro, travelers, items) lives in a JSON file under projects/group-vote/trips/, which git
-ignores because this repo is public, and on the server, which sends it only with the trip's password.
-See ../trip.example.json for the format.
+A trip's page data (title, intro, travelers, items, and optionally its trip dates and lodging) lives in a JSON file under
+projects/group-vote/trips/, which git ignores because this repo is public, and on the server, which sends it only with
+the trip's password. See ../trip.example.json for the format.
 
   python create_trip.py --table <TableName> --file ../trips/niseko-2027.json --code "<password to share>"
   python create_trip.py --table <TableName> --file ../trips/niseko-2027.json     # new page data, same password
@@ -43,7 +43,24 @@ def check_page(page):
     ids = [i.get("id") for i in items]
     bad = [i for i in ids if not isinstance(i, str) or not ITEM_RE.match(i)]
     dupes = sorted({i for i in ids if ids.count(i) > 1})
-    lost = sorted({str(i.get("r")) for i in items} - set(page.get("regions") or []))
+    stays = page.get("lodging", [])
+    stay_ids = {x.get("id") for x in stays} if isinstance(stays, list) else set()
+    # stage: "dates" or "lodging" for a trip-date or lodging option (a lodging option names its stay); other items are
+    # the places on the ballot, each in one of the regions.
+    lost = sorted({str(i.get("r")) for i in items if not i.get("stage")} - set(page.get("regions") or []))
+    bad_stage = [i.get("id") for i in items if "stage" in i and not (i["stage"] in ("dates", "lodging") and
+                 (i["stage"] != "lodging" or i.get("stay") in stay_ids))]
+    # dates: {"decided": "Thu Feb 18 - Mon Mar 1, 2027", "note": "...", "head": ["", "Lands", "Flies Home"], "rows": [[...]]};
+    # without "decided", the trip-date options (stage "dates") are on the ballot.
+    dates = page.get("dates", {})
+    bad_dates = not (isinstance(dates, dict) and all(isinstance(dates.get(k, ""), str) for k in ("decided", "note")) and
+                     all(isinstance(r, list) and all(isinstance(x, str) for x in r) for r in [dates.get("head", [])] + list(dates.get("rows", []))))
+    # lodging: the stays in order, each {"id", "where", "when", "status": "booked" | "open"} plus optional nights, name,
+    # area, url, note. An open stay's options are the items with "stay" set to its id.
+    bad_stays = not isinstance(stays, list) or any(not isinstance(x, dict) or not ITEM_RE.match(str(x.get("id", ""))) or
+                                                   x.get("status") not in ("booked", "open") or
+                                                   not all(isinstance(x.get(k, ""), str) for k in ("where", "when", "name", "area", "url", "note")) or
+                                                   not isinstance(x.get("nights", 0), int) for x in stays)
     # placeId: a Google place id. photos: positions 0-9 in that place's Google photo list, best first.
     bad_place = [i.get("id") for i in items if "placeId" in i and not (isinstance(i["placeId"], str) and re.match(r"^[A-Za-z0-9_-]{8,}$", i["placeId"]))]
     bad_photos = [i.get("id") for i in items if "photos" in i and not (isinstance(i["photos"], list) and
@@ -61,6 +78,11 @@ def check_page(page):
     when = page.get("time", {})
     bad_time = [r for r, v in (when.items() if isinstance(when, dict) else [("time", None)])
                 if r not in (page.get("regions") or []) or not isinstance(v, list) or not all(isinstance(x, str) and span.match(x) for x in v)]
+    if "owner" in page and page["owner"] not in names:
+        raise SystemExit("owner must be one of the travelers")
+    if bad_stage or bad_dates or bad_stays:
+        raise SystemExit(f"bad stage (\"dates\", or \"lodging\" with a stay from 'lodging'): {bad_stage}; "
+                         f"dates: {'bad' if bad_dates else 'ok'}; lodging: {'bad' if bad_stays else 'ok'}")
     if bad or dupes or lost or bad_place or bad_photos or bad_labels or bad_slot or bad_flags or bad_known or bad_time:
         if bad_time:
             raise SystemExit(f"time must map regions to lists like \"2/19 1PM - 2/21 12PM\" or \"2/22\": bad {bad_time}")
@@ -78,6 +100,8 @@ g = p.add_mutually_exclusive_group(required=True)
 g.add_argument("--file", help="the trip's JSON file")
 g.add_argument("--export", metavar="TRIP", help="print a trip's JSON as the server has it")
 p.add_argument("--code", help="the password travelers type in: needed the first time, optional after")
+p.add_argument("--owner-code", help="the owner's own code (keep it to yourself): a device holding it runs the agent at once, "
+               "since the agent runs on the owner's Claude subscription; anyone else's suggestions wait for the owner's OK")
 p.add_argument("--drop-suggested", action="store_true", help="upload even if it drops places added through Suggest Spot")
 a = p.parse_args()
 table = boto3.resource("dynamodb", region_name=a.region).Table(a.table)
@@ -110,6 +134,10 @@ if a.code is not None:
     if not a.code.strip():
         raise SystemExit("The password can't be blank")
     fields["code_hash"] = code_hash(a.code)
+if a.owner_code is not None:
+    if len(a.owner_code.strip()) < 8:
+        raise SystemExit("The owner code needs at least 8 characters")
+    fields["owner_hash"] = code_hash(a.owner_code)
 kw = {
     "Key": {"pk": f"trip#{trip}", "sk": "meta"},
     "UpdateExpression": "SET " + ", ".join(f"#{k} = :{k}" for k in fields) + ", #created = if_not_exists(#created, :now)",
@@ -128,4 +156,6 @@ except ClientError as e:
     if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
         raise SystemExit(f"{trip} changed on the server while uploading (a suggestion was probably just added). Run it again.")
     raise
-print(f"Trip {trip}: {len(page['items'])} items for {', '.join(names)}; password {'set' if a.code else 'unchanged'}")
+opts = sum(bool(i.get("stage")) for i in page["items"])
+print(f"Trip {trip}: {len(page['items']) - opts} places and {opts} date or lodging options for {', '.join(names)}; "
+      f"password {'set' if a.code else 'unchanged'}")
