@@ -341,7 +341,93 @@ function openCategories(){
 // places' coordinates come from the server, which looks each up once and keeps it up to 25 days (TRIP.map: points,
 // legs, center, zoom).
 let tripMap=null, mapBusy=false, mapPop=null, mapView=ls("mapview")||"all";
-const mapLayers={route:[], dots:[]}, mapOff={route:false, cats:{}}, mapBox={};   // mapBox: each view's bounds
+const mapLayers={route:[], dots:[]}, mapOff={route:false, cats:{}}, mapBox={}, mapLabels=[];   // mapBox: each region's bounds
+const WEEK=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+// "2/19 1PM - 2/21 12PM" as "Fri Feb 19 – Sun Feb 21", a single day as "Sat Feb 20": the map shows days, not times.
+function mapDays(s){
+  const ds=(String(s).match(/\d{1,2}\/\d{1,2}/g)||[]).map(md=>{ const [m,d]=md.split("/").map(Number), t=new Date(Date.UTC(+TRIP.year||2000,m-1,d));
+    return WEEK[t.getUTCDay()]+" "+MONTHS.substr((m-1)*3,3)+" "+d });
+  return ds.length?(ds.length>1&&ds[1]!==ds[0]?ds[0]+" – "+ds[1]:ds[0]):String(s);
+}
+// Durations as "1 Hr 40 Min".
+const mapDur=s=>String(s||"").replace(/\b(\d+(?:\.\d+)?)\s*hrs?\b/gi,"$1 Hr").replace(/\b(\d+)\s*mins?\b/gi,"$1 Min");
+// A named point: its dot exactly on the spot, its label just above (one line per date range), which moves aside when
+// another label is in the way (tied back to its dot by a thin line once it's moved well away).
+function mapPt(kind,name,lines,ic){
+  const n=el("div","map-pt "+kind), box=el("div","map-box"), tie=el("i","map-tie");
+  if(ic) box.insertAdjacentHTML("beforeend",ic);
+  box.appendChild(el("b",null,name)); lines.filter(Boolean).forEach(t=>box.appendChild(el("small",null,t)));
+  tie.hidden=true; n.append(tie,el("i","map-anchor"),box); return n;
+}
+// Labels never sit on top of each other: after every move or zoom, each takes a place clear of the others and of every
+// point's dot, inside the map. A point's label tries places right around its dot, then the nearest clear place anywhere
+// in the map, tied back to its dot by a thin line that crosses no other dot or label; it hides only when the map has
+// no room left for it. A route's date tries places along its own line, and hides at a zoom with no room for it. Who
+// goes first decides the rest, so a few orders are tried (as listed, west to east, east to west, north to south, south
+// to north, the most crowded first) and the tidiest layout wins: fewest hidden, no crossings, shortest ties.
+function mapDeclutter(){
+  if(!tripMap) return;
+  const t0=performance.now(), M=$("#tripMap").getBoundingClientRect(), pad=4, L0=M.left+pad, T0=M.top+pad, R0=M.right-pad, B0=M.bottom-pad;
+  const L=mapLabels.filter(o=>o.getMap()&&o.node.isConnected).map(o=>{
+    const n=o.node.querySelector(".map-box")||o.node, tie=o.node.querySelector(".map-tie");
+    n.style.setProperty("--dx","0px"); n.style.setProperty("--dy","0px"); n.style.visibility=""; if(tie) tie.hidden=true;
+    return {o,n,tie,anc:o.node.querySelector(".map-anchor"),leg:!!o.path} });
+  L.forEach(x=>{ const r=x.n.getBoundingClientRect(); x.r={l:r.left,t:r.top,r:r.right,b:r.bottom,w:r.width,h:r.height};   // all the reads after all the writes: one layout
+    if(x.anc){ const q=x.anc.getBoundingClientRect(); x.dot={l:q.left,t:q.top,r:q.right,b:q.bottom}; x.ax=(q.left+q.right)/2; x.ay=(q.top+q.bottom)/2;
+      x.shown=x.ax>=M.left&&x.ax<=M.right&&x.ay>=M.top&&x.ay<=M.bottom } });
+  // A place to try: its offset and the box the label would fill there.
+  const box=(x,dx,dy)=>{ const l=x.r.l+dx, t=x.r.t+dy, r=x.r.r+dx, b=x.r.b+dy; return {dx,dy,l,t,r,b,in:l>=L0&&r<=R0&&t>=T0&&b<=B0} };
+  const near=[[0,0],[0,-1],[0,1],[1,0],[-1,0],[1,-1],[-1,-1],[1,1],[-1,1],[0,-2],[0,2],[2,0],[-2,0],[1,-2],[-1,-2],[1,2],[-1,2],[2,-1],[-2,-1],[2,1],[-2,1]];
+  L.forEach(x=>{ const w=x.r.w+4, h=x.r.h+4; let ds=near.map(([a,b])=>[a*w*.6,b*h]);
+    if(x.shown) ds=ds.map(([dx,dy])=>{ const l=x.r.l+dx, r=x.r.r+dx, t=x.r.t+dy, b=x.r.b+dy; return [dx+(l<L0?L0-l:r>R0?R0-r:0), dy+(t<T0?T0-t:b>B0?B0-b:0)] });   // its point is in view: so is the label
+    const pr=x.leg&&x.o.getProjection();
+    if(pr){ const px=i=>pr.fromLatLngToDivPixel(new google.maps.LatLng(x.o.path[i].lat,x.o.path[i].lng)), c=px(16); ds=[];
+      [16,12,20,9,23,6,26,4,28].forEach(i=>{ const p=px(i); [0,-1,1].forEach(k=>ds.push([p.x-c.x,p.y-c.y+k*h])) }) }
+    x.cands=ds.map(([dx,dy])=>box(x,dx,dy)) });
+  const st=Math.max(10,Math.round(Math.sqrt(M.width*M.height/2500)));
+  const far=x=>x.far||(x.far=(()=>{ const c=[];   // every place in the map, nearest its dot first: worked out once, and only when needed
+    for(let y=T0; y+x.r.h<=B0; y+=st) for(let v=L0; v+x.r.w<=R0; v+=st){ const q=box(x,v-x.r.l,y-x.r.t);
+      q.k=Math.hypot(Math.max(v-x.ax,0,x.ax-v-x.r.w),Math.max(y-x.ay,0,x.ay-y-x.r.h)); c.push(q) }
+    return c.sort((a,b)=>a.k-b.k) })());
+  // Does the segment from (x0,y0) toward (x1,y1), short of its far end, pass through box q grown by g? (slab clipping)
+  const hits=(x0,y0,x1,y1,q,g)=>{ const dx=x1-x0, dy=y1-y0; let a=0, b=.97;
+    if(dx){ const t=(q.l-g-x0)/dx, u=(q.r+g-x0)/dx; a=Math.max(a,Math.min(t,u)); b=Math.min(b,Math.max(t,u)) } else if(x0<q.l-g||x0>q.r+g) return false;
+    if(dy){ const t=(q.t-g-y0)/dy, u=(q.b+g-y0)/dy; a=Math.max(a,Math.min(t,u)); b=Math.min(b,Math.max(t,u)) } else if(y0<q.t-g||y0>q.b+g) return false;
+    return a<b };
+  const end=(x,q)=>{ const nx=q.l>x.ax?q.l:q.r<x.ax?q.r:x.ax, ny=q.t>x.ay?q.t:q.b<x.ay?q.b:x.ay; return [nx,ny,Math.hypot(nx-x.ax,ny-x.ay)] };   // where its tie meets the label
+  const dots=L.filter(x=>x.dot).map(x=>x.dot);
+  const lay=order=>{ const placed=dots.slice(), ties=[], out=new Map(); let cost=0;
+    const free=q=>{ for(let i=0;i<placed.length;i++){ const p=placed[i]; if(q.l<p.r&&q.r>p.l&&q.t<p.b&&q.b>p.t) return false } return true };
+    const cuts=q=>{ for(let i=0;i<ties.length;i++){ const s=ties[i]; if(hits(s[0],s[1],s[2],s[3],q,0)) return true } return false };   // across an earlier label's tie
+    const crosses=(x,q)=>{ const [nx,ny,len]=end(x,q); if(len<=16) return false;
+      for(let i=0;i<placed.length;i++){ const p=placed[i]; if(p!==x.dot&&hits(x.ax,x.ay,nx,ny,p,2)) return true } return false };
+    order.forEach(x=>{ const ok=q=>q.in&&free(q), neat=q=>q.in&&free(q)&&!cuts(q)&&!(x.shown&&crosses(x,q));
+      let c=x.cands.find(neat);
+      if(!c&&x.shown){ const F=far(x); for(let i=0,n=Math.min(F.length,900);i<n&&!c;i++) if(neat(F[i])) c=F[i]; c=c||x.cands.find(ok)||F.find(ok) }
+      if(!c&&x.leg) c=x.cands.find(ok);
+      if(!c&&!x.leg&&!x.shown) c=x.cands.find(free);   // a point just out of view: its label may hang off the edge
+      if(!c){ cost+=x.leg?150:x.shown?5000:0; return }
+      if(cuts(c)) cost+=400;
+      if(x.shown){ const [nx,ny,len]=end(x,c); if(len>16){ cost+=len+(crosses(x,c)?400:0); ties.push([x.ax,x.ay,nx,ny]) } }
+      placed.push(c); out.set(x,c) });
+    return {out,cost} };
+  const pts=L.filter(x=>!x.leg), legs=L.filter(x=>x.leg), by=f=>pts.slice().sort((a,b)=>f(a)-f(b));
+  const crowd=x=>pts.filter(y=>y!==x&&Math.hypot(y.ax-x.ax,y.ay-x.ay)<150).length, seen=new Set();
+  let best=null;
+  [by(x=>-(+x.o.node.style.zIndex||0)),by(x=>x.ax),by(x=>-x.ax),by(x=>x.ay),by(x=>-x.ay),by(x=>-crowd(x))].forEach(o=>{
+    const key=o.map(x=>pts.indexOf(x)).join(); if((best&&best.cost===0)||seen.has(key)) return; seen.add(key);
+    const r=lay(o.concat(legs)); if(!best||r.cost<best.cost) best=r });
+  L.forEach(x=>{ const c=best.out.get(x);
+    if(!c){ x.n.style.visibility="hidden"; return }
+    x.n.style.setProperty("--dx",c.dx+"px"); x.n.style.setProperty("--dy",c.dy+"px");
+    if(x.tie&&x.shown){ const [nx,ny,len]=end(x,c);
+      if(len>16){ x.tie.style.width=len+"px"; x.tie.style.transform="rotate("+Math.atan2(ny-x.ay,nx-x.ax)+"rad)"; x.tie.hidden=false } } });
+  try{ performance.clearMeasures("gv-map-layout"); performance.measure("gv-map-layout",{start:t0}) }catch(e){}
+}
+// The views: the whole trip, then the trip's own (TRIP.map.views: a label, the region whose spots it shows, a center
+// and zoom), or else each region fitted to its spots.
+const mapViewList=()=>{ const vs=(TRIP.map&&TRIP.map.views)||[];
+  return vs.length?vs.map(v=>({v:v.label,label:v.label,r:v.r,center:v.center,zoom:v.zoom})):REGIONS.filter(r=>mapBox[r]).map(r=>({v:r,label:r,r})) };
 const MAP_COLORS=["#e2c88e","#5fc3ad","#e58a92","#8ab8e6","#c3a6e8","#f0a868","#a6d86e","#d9d2c4","#f2d16b","#7fd1e0","#e0a2c8","#b8c97a"];
 const MAP_STYLE=[{elementType:"geometry",stylers:[{color:"#161615"}]},{elementType:"labels.text.fill",stylers:[{color:"#8d877a"}]},
   {elementType:"labels.text.stroke",stylers:[{color:"#0b0b0b"}]},{featureType:"administrative",elementType:"geometry.stroke",stylers:[{color:"#3b352a"}]},
@@ -379,7 +465,7 @@ async function ensureMap(){
       draw(){ const p=this.getProjection().fromLatLngToDivPixel(this.pos); if(p){ this.node.style.left=p.x+"px"; this.node.style.top=p.y+"px" } }
       onRemove(){ this.node.remove() }
     }
-    const M=TRIP.map, P=M.points||{}, box=$("#tripMap"), bounds=new LatLngBounds();
+    const M=TRIP.map, P=M.points||{}, box=$("#tripMap"), bounds=new LatLngBounds(), core=new LatLngBounds();   // core: the route and stays
     tripMap=new Map(box,{center:{lat:(M.center||[43,141.2])[0],lng:(M.center||[43,141.2])[1]},zoom:M.zoom||8,styles:MAP_STYLE,backgroundColor:"#0b0b0b",
       disableDefaultUI:true,zoomControl:true,fullscreenControl:true,gestureHandling:"cooperative",clickableIcons:false});
     const put=(pos,node,z,r)=>{ const o=new Pin(pos,node,z); o.setMap(tripMap); bounds.extend({lat:pos[0],lng:pos[1]});
@@ -390,22 +476,23 @@ async function ensureMap(){
       const line=new Polyline({map:tripMap,path,strokeColor:"#c9a55a",strokeOpacity:.9,strokeWeight:2.5,clickable:false,
         icons:[{icon:{path:"M -2.6 2.2 L 0 -2.2 L 2.6 2.2",strokeColor:"#f0dcaa",strokeWeight:2,scale:1.4},offset:"58%"}]});
       mapLayers.route.push(line);
-      const mid=path[16], lab=el("div","map-leg",L.when+(L.how?" · "+L.how:"")); mapLayers.route.push(put([mid.lat,mid.lng],lab,4)) });
+      const mid=path[16], lab=el("div","map-leg",L.when+(L.how?" · "+mapDur(L.how):"")), o=put([mid.lat,mid.lng],lab,6); o.path=path; mapLayers.route.push(o); mapLabels.push(o);
+      core.extend({lat:a.lat,lng:a.lng}); core.extend({lat:b.lat,lng:b.lng}) });
     // The regions and other named points (the airport, a stay without a Google place), with their dates.
-    Object.values(P).forEach(p=>{ const n=el("div","map-pt "+(p.kind||"region")); n.appendChild(el("b",null,p.name));
-      const w=p.r&&(TRIP.time||{})[p.r]; const sub=p.note||(Array.isArray(w)?w.join(" · "):"");
-      if(sub) n.appendChild(el("small",null,sub)); put([p.lat,p.lng],n,p.kind==="stay"?6:5,p.r) });
+    Object.values(P).forEach(p=>{ const w=p.r&&(TRIP.time||{})[p.r], lines=p.note?String(p.note).split(/\s+·\s+/):(Array.isArray(w)?w.map(mapDays):[]);
+      mapLabels.push(put([p.lat,p.lng],mapPt(p.kind||"region",p.name,lines),p.kind==="stay"?9:8,p.r)); core.extend({lat:p.lat,lng:p.lng}) });
     // Where we stay, by Google place.
     (TRIP.lodging||[]).forEach(x=>{ const c=x.placeId&&at[x.placeId]; if(!c) return;
-      const n=el("div","map-pt stay"); n.innerHTML=icon("stay"); n.append(el("b",null,x.name||x.where),el("small",null,x.when||"")); put(c,n,6,REGIONS.includes(x.where)?x.where:"") });
+      mapLabels.push(put(c,mapPt("stay",x.name||x.where,[x.when||""],icon("stay")),9,REGIONS.includes(x.where)?x.where:"")); core.extend({lat:c[0],lng:c[1]}) });
     // Every spot, as a dot in its category's color; tap for its card.
     let shown=0;
     ITEMS.forEach(it=>{ const c=it.placeId&&at[it.placeId]; if(!c) return; shown++;
       const k=GROUPS.some(([g])=>g===it.group)?it.group:"", d=el("button","map-dot"); d.type="button"; d.style.background=catColor(k);
       d.dataset.id=it.id; d.setAttribute("aria-label",it.dish+", "+it.place); d.title=it.place;
-      mapLayers.dots.push({o:put(c,d,7,it.r),r:it.r,k}); d.onclick=()=>mapCard(it,c,Pin) });
-    mapBox.all=bounds;
+      mapLayers.dots.push({o:put(c,d,5,it.r),r:it.r,k}); d.onclick=()=>mapCard(it,c,Pin) });
+    mapBox.all=core.isEmpty()?bounds:core;   // Whole Trip frames the route and stays; outlying spots are a pan away
     tripMap.addListener("click",()=>{ if(mapPop){ mapPop.setMap(null); mapPop=null } });
+    tripMap.addListener("idle",()=>requestAnimationFrame(mapDeclutter));   // after every move or zoom
     mapViews(); mapLegend(); mapShow(true);
     mapNote(shown?"":"Places show once their spots are found on Google.");
   }catch(e){ tripMap=null; mapNote("Couldn't load Google's map. Try again in a moment.") }
@@ -420,22 +507,25 @@ function mapCard(it,c,Pin){
   const row=el("div","map-acts"), see=el("button","tx-b","See on the Ballot"); see.type="button";
   see.onclick=()=>{ mapPop.setMap(null); mapPop=null; setPage("eats",true); seeItem(it.id) };
   const g=el("a","tx-b","Google Maps"); g.href=mapsLink(it); g.target="_blank"; g.rel="noopener"; row.append(see,g); n.appendChild(row);
-  mapPop=new Pin(c,n,9); mapPop.setMap(tripMap);
+  mapPop=new Pin(c,n,10); mapPop.setMap(tripMap);
 }
 // What shows: the route unless it's switched off; a spot if its category is on and it's in the view (the whole trip,
 // or one region). fit: zoom to the view.
 function mapShow(fit){
   if(!tripMap) return;
   mapLayers.route.forEach(o=>o.setMap(mapOff.route?null:tripMap));
-  mapLayers.dots.forEach(d=>d.o.setMap(!mapOff.cats[d.k]&&(mapView==="all"||d.r===mapView)?tripMap:null));
+  const cur=mapView==="all"?null:mapViewList().find(x=>x.v===mapView);
+  mapLayers.dots.forEach(d=>d.o.setMap(!mapOff.cats[d.k]&&(!cur||d.r===cur.r)?tripMap:null));
   document.querySelectorAll("#mapViews button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===mapView)));
-  if(fit){ const b=mapBox[mapView]||mapBox.all; if(b&&!b.isEmpty()) tripMap.fitBounds(b,mapView==="all"?48:36) }
+  if(fit){ if(cur&&cur.center){ tripMap.setCenter({lat:cur.center[0],lng:cur.center[1]}); tripMap.setZoom(cur.zoom||13) }
+    else { const b=cur?mapBox[cur.r]:mapBox.all; if(b&&!b.isEmpty()) tripMap.fitBounds(b,cur?24:48) } }
+  requestAnimationFrame(mapDeclutter);
 }
-// The views: the whole trip, or one region at a time (its spots, zoomed in). Remembered on this device.
+// The view buttons: Whole Trip, then the trip's views. The choice is remembered on this device.
 function mapViews(){
   const V=$("#mapViews"); if(!V) return; V.textContent="";
-  if(mapView!=="all"&&!mapBox[mapView]) mapView="all";
-  [["all","Whole Trip"]].concat(REGIONS.filter(r=>mapBox[r]).map(r=>[r,r])).forEach(([v,label])=>{
+  const list=mapViewList(); if(mapView!=="all"&&!list.some(x=>x.v===mapView)) mapView="all";
+  [{v:"all",label:"Whole Trip"}].concat(list).forEach(({v,label})=>{
     const b=el("button",null,label); b.type="button"; b.dataset.v=v;
     b.onclick=()=>{ mapView=v; ls("mapview",v); if(mapPop){ mapPop.setMap(null); mapPop=null } mapShow(true) };
     V.appendChild(b) });
