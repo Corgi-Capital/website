@@ -512,6 +512,14 @@ body.gv-locked::before{background:#0b0b0b}
 .gate-form button:hover,.gate-form button:focus-visible{color:var(--g-gold);outline:none}
 .gate-form button:hover::after,.gate-form button:focus-visible::after{width:100%}
 .gate-form button:disabled{opacity:.5;cursor:default}
+/* A remembered password: entered and locked while a gold line fills (the server checks meanwhile), then it opens. */
+.gate-form.auto{position:relative}
+.gate-form.auto::after{content:"";position:absolute;left:0;bottom:0;width:0;height:1px;background:linear-gradient(90deg,var(--g-gold),#f0dcaa);box-shadow:0 0 8px rgba(201,165,90,.6);animation:gvFill 1.4s var(--g-ease) .85s forwards}
+.gate-form.auto button,.gate-form.auto button:disabled{display:inline-flex;align-items:center;gap:7px;color:var(--g-gold);opacity:1}
+.gate-form.auto button .ic{width:13px;height:13px;transition:transform .35s var(--g-ease)}
+.gate-form.auto.open button{color:var(--g-ivory)}
+.gate-form.auto.open button .ic{transform:translateY(-1px) rotate(-8deg)}
+@keyframes gvFill{to{width:100%}}
 .gate-msg{min-height:1.9em;margin:20px 0 0;font:400 11px/1.9 "Inconsolata",monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--g-ivory);opacity:0;animation:gvFadeUp 1s var(--g-ease) .7s forwards}
 @keyframes gvFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 @keyframes gvFadeIn{from{opacity:0}to{opacity:.75}}

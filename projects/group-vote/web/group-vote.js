@@ -43,6 +43,7 @@ const ICON={
   drinks:'<path d="M2.5 2.5h11L8 8.5z"/><path d="M8 8.5v5M5.5 13.5h5"/>',
   coffee:'<path d="M2.5 6.5h9v3a4 4 0 0 1-4 4h-1a4 4 0 0 1-4-4z"/><path d="M11.5 7.5h.8a2 2 0 0 1 0 4h-1.3"/><path d="M5.6 1.8c-.7.8.7 1.6 0 2.6M8.4 1.8c-.7.8.7 1.6 0 2.6"/>',
   lock:'<path d="M5.4 7.4V5.6a2.6 2.6 0 0 1 5.2 0v1.8"/><rect x="3.6" y="7.2" width="8.8" height="6.6" rx="1.6" fill="currentColor"/>',
+  unlock:'<path d="M5.4 7.4V5.6a2.6 2.6 0 0 1 5-1"/><rect x="3.6" y="7.2" width="8.8" height="6.6" rx="1.6" fill="currentColor"/>',
   izakaya:'<path d="M6 2h4M6 14h4M8 3.2c-2.9 0-4.6 2.1-4.6 4.8s1.7 4.8 4.6 4.8 4.6-2.1 4.6-4.8S10.9 3.2 8 3.2z"/><path d="M3.5 6.4h9M3.5 9.6h9"/>',
   specialty:'<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>',
   slotted:'<path d="M2.5 3.5h11v10h-11zM2.5 6.5h11M5.5 2v3M10.5 2v3"/><path d="M5.8 10.1l1.6 1.6 3-3"/>',
@@ -717,9 +718,10 @@ function card(it,rank){
     a.href=it.url; a.target="_blank"; a.rel="noopener"; links.appendChild(a) }
   if(it.placeId||it.q) links.appendChild(gmapsBtn(it));
   if(links.firstChild) act.appendChild(links);
-  // Group Tastes and Coffee: a thumbs up for a good pick (the agent looks for more like it), a thumbs down to take it off the list.
+  // AI picks in the categories suggestions fill: a thumbs up for a good pick (the agent looks for more like it), a thumbs
+  // down to take it off the list. A member's own suggestion gets neither: the votes say what the group thinks of it.
   let th=null;
-  if(THUMBS_IN.has(it.group)&&!it.stage){
+  if(THUMBS_IN.has(it.group)&&!it.stage&&aiPick(it)){
     th={up:el("button","th up"), down:el("button","th down")}; th.up.type=th.down.type="button";
     th.up.innerHTML=icon("up"); th.up.appendChild(el("span","th-n")); th.down.innerHTML=icon("up"); th.down.appendChild(document.createTextNode("Remove"));
     th.up.onclick=()=>thumbUp(it.id); th.down.onclick=()=>removeSpot(it.id);
@@ -1253,13 +1255,16 @@ function boot(){
   const form=gate.querySelector("form"), input=form.querySelector("input"), btn=form.querySelector("button"), msg=gate.querySelector(".gate-msg");
   const say=t=>{ msg.textContent=t||"" }, fine=window.matchMedia&&matchMedia("(pointer: fine)").matches;
   let busy=false;
-  async function attempt(pw,remembered){
+  // hold: for a remembered password, how long the gate shows it entered and locked before the page comes in.
+  async function attempt(pw,remembered,hold){
     pw=String(pw||"").trim();
     if(!pw){ say("Enter the password."); input.focus(); return }
-    if(busy) return; busy=true; btn.disabled=true; input.readOnly=true; say(remembered?"Opening…":"Checking…");
-    const j=await api(tripPath+"?code="+encodeURIComponent(pw)+(OWNER?"&owner="+encodeURIComponent(OWNER):""));
-    if(j&&j.ok){ code=pw; ls("code",pw); return open(j) }   // the form stays disabled while the gate fades out
-    busy=false; btn.disabled=false; input.readOnly=false; form.hidden=false;
+    if(busy) return; busy=true; btn.disabled=true; input.readOnly=true; if(!hold) say(remembered?"Opening…":"Checking…");
+    const t0=Date.now(), j=await api(tripPath+"?code="+encodeURIComponent(pw)+(OWNER?"&owner="+encodeURIComponent(OWNER):""));
+    if(j&&j.ok){ code=pw; ls("code",pw);
+      if(hold){ await wait(Math.max(0,hold-(Date.now()-t0))); form.classList.add("open"); btn.innerHTML=icon("unlock")+"<span>Welcome Back</span>"; await wait(550) }
+      return open(j) }   // the form stays disabled while the gate fades out
+    busy=false; btn.disabled=false; input.readOnly=false; form.hidden=false; form.classList.remove("auto","open"); btn.textContent="Enter";
     if(j&&j.error==="code"){
       if(remembered){ ls("code",null); code=""; input.value=""; say(CHANGED) } else { say("Incorrect password."); input.select() }
     } else { if(remembered) input.value=pw; say("Can't reach the server. Try again in a moment.") }
@@ -1282,7 +1287,11 @@ function boot(){
   }
   form.addEventListener("submit",e=>{ e.preventDefault(); attempt(input.value,false) });
   let note=""; try{ note=sessionStorage.getItem("gv-msg")||""; sessionStorage.removeItem("gv-msg") }catch(e){}
-  if(code){ form.hidden=true; attempt(code,true) }
+  // A remembered password: shown entered (as dots), the button locked while a gold line fills and the server checks it,
+  // then the lock opens and the page comes in. Without motion, straight in.
+  if(code&&REDUCED){ form.hidden=true; attempt(code,true) }
+  else if(code){ input.value=code; input.readOnly=true; form.classList.add("auto"); btn.disabled=true;
+    btn.innerHTML=icon("lock")+"<span>Unlocking</span>"; btn.setAttribute("aria-label","Unlocking"); attempt(code,true,2300) }
   else { say(note); if(fine) input.focus({preventScroll:true}) }
 }
 boot();

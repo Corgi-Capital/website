@@ -14,7 +14,7 @@ Routes
                                        "up": the Group Tastes spots this traveler gave a thumbs up (a good pick: the agent
                                        looks for more like them); left as it was when the body has none.
   POST /trips/{trip}/remove            body {"code", "name", "item", "undo"} -> {"ok": true, "suggestions": [...]}. A thumbs
-                                       down: takes a Group Tastes or Coffee spot off the page, unless someone has voted it above MEH or
+                                       down: takes an AI pick in Group Tastes or Coffee off the page, unless someone has voted it above MEH or
                                        another traveler gave it a thumbs up (409 {"ok": false, "error": "wanted", "by":
                                        [names]}). "undo": true puts it back; anyone can.
   POST /trips/{trip}/suggestions       body {"code", "name", "text", "why", "owner"} -> {"ok": true, "suggestions": [...],
@@ -499,7 +499,7 @@ def _remove(trip, meta, body):
     items = {i.get("id"): i for i in json.loads(meta.get("page") or "{}").get("items", [])}
     it = items.get(iid) if isinstance(iid, str) else None
     thumbed = {c["key"] for c in _categories(trip, json.loads(meta.get("page") or "{}")) if c["thumbs"]}
-    if not it or it.get("group") not in thumbed or it.get("stage"):
+    if not it or it.get("group") not in thumbed or it.get("stage") or (it.get("suggestedBy") and not it.get("found")):   # AI picks only
         return _resp(400, {"ok": False, "error": "item"})
     key, now = {"pk": f"trip#{trip}", "sk": f"removed#{iid}"}, int(time.time())
     if undo:
