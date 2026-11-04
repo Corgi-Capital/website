@@ -14,7 +14,7 @@ Routes
                                        "up": the Group Tastes spots this traveler gave a thumbs up (a good pick: the agent
                                        looks for more like them); left as it was when the body has none.
   POST /trips/{trip}/remove            body {"code", "name", "item", "undo"} -> {"ok": true, "suggestions": [...]}. A thumbs
-                                       down: takes a Group Tastes spot off the page, unless someone has voted it above MEH or
+                                       down: takes a Group Tastes or Coffee spot off the page, unless someone has voted it above MEH or
                                        another traveler gave it a thumbs up (409 {"ok": false, "error": "wanted", "by":
                                        [names]}). "undo": true puts it back; anyone can.
   POST /trips/{trip}/suggestions       body {"code", "name", "text", "why", "owner"} -> {"ok": true, "suggestions": [...],
@@ -22,7 +22,7 @@ Routes
                                        Tabelog link or a name. Each is queued and the agent function (agent.py) is invoked to
                                        review and add it. With AGENT_HOLD=owner, only suggestions sent with the owner's code
                                        run at once and anyone else's are "held" until the owner OKs them. 429 "limit" past
-                                       the trip's daily cap.
+                                       the traveler's daily cap.
   POST /trips/{trip}/sections          body {"code", "name", "section", "on"} -> {"ok": true, "sections": {...},
                                        "suggestions": [...]}. Turns a section's picks on, or off (suggestions only), for
                                        everyone; logged in the updates. The page data carries "sections": {key: bool}.
@@ -40,12 +40,12 @@ Table layout (single table, on-demand)
                                            hash), page (page data as JSON), rev, created, updated
   pk = "trip#<trip>", sk = "ballot#<name>" votes {item_id: int}, up [item ids with this traveler's thumbs up], updated
   pk = "trip#<trip>", sk = "sections"      s_<section> (bool): a section flipped on the page; wins over the trip file's "sections"
-  pk = "trip#<trip>", sk = "removed#<item>" by, at, place: a Group Tastes spot the group took off the page. The page data
+  pk = "trip#<trip>", sk = "removed#<item>" by, at, place: a Group Tastes or Coffee spot the group took off the page. The page data
                                            keeps the spot, so undo (or suggesting it again) brings it back as it was.
   pk = "trip#<trip>", sk = "sugg#<ms>-<r>" by, text, why, kind (spot, taste, remove, section), status (queued, working, added,
                                            duplicate, rejected, failed; held, declined; removed, restored), reason, item (the card's id),
                                            restoredBy, created, updated
-  pk = "trip#<trip>", sk = "suggday#<date>" count (suggestions that day, Pacific time)
+  pk = "trip#<trip>", sk = "suggday#<date>#<name>" count (that traveler's suggestions that day, Pacific time)
   pk = "usage#<YYYY-MM>", sk = "<kind>"    count (Google Maps calls made this month, Pacific time like Google billing)
 """
 import hashlib
@@ -69,9 +69,14 @@ SSM = boto3.client("ssm")   # the Maps key and the agent's Claude credential, as
 AGENT_HOLD = os.environ.get("AGENT_HOLD", "none")
 # The page's sections. Each shows our picks plus everyone's suggestions (on), or suggestions only (off: our picks are
 # hidden there and the agent stops adding to it; suggestions are still looked up). Anyone can flip one.
-SECTIONS = ("locations", "dates", "lodging", "specialty", "favorite", "tastes", "event")
+SECTIONS = ("locations", "dates", "lodging", "specialty", "favorite", "tastes", "coffee", "event")
+# The sections Suggest Spot and the agent fill. Their cards get thumbs: up for a good pick, down to take one off the list
+# while no one wants it.
+THUMB_GROUPS = ("tastes", "coffee")
 LAMBDA = boto3.client("lambda")
-SUGGEST_DAILY_LIMIT = int(os.environ.get("SUGGEST_DAILY_LIMIT", "25"))
+# Each traveler's daily cap on suggestions (Pacific time). The agent's runs use the owner's Claude plan, so a cap bounds
+# them, and each traveler has their own, so one busy traveler never uses up the others'.
+SUGGEST_DAILY_LIMIT = int(os.environ.get("SUGGEST_DAILY_LIMIT", "40"))
 SUGGEST_SHOW_DAYS = 7
 _maps_key = {"value": None, "at": 0}
 TRIP_RE = re.compile(r"^[a-z0-9-]{1,48}$")
@@ -232,7 +237,7 @@ def _suggest(trip, meta, body):
         lines = list(dict.fromkeys(l.strip() for l in text.splitlines() if l.strip())) if isinstance(text, str) else []
     if not lines or len(lines) > 5 or any(len(l) > 500 for l in lines) or not isinstance(why, str):
         return _resp(400, {"ok": False, "error": "text"})
-    if not take_daily(trip, len(lines)):
+    if not take_daily(trip, len(lines), name):
         return _resp(429, {"ok": False, "error": "limit"})
     held = AGENT_HOLD == "owner" and not _owner_ok(meta, body.get("owner"))
     now, ids = time.time(), []
@@ -274,12 +279,12 @@ def _set_section(trip, meta, body):
     return _resp(200, {"ok": True, "sections": _sections(trip, json.loads(meta.get("page") or "{}")), "suggestions": _suggestions(trip)})
 
 
-def take_daily(trip, n):
-    """Counts n suggestions against the trip's daily cap (Pacific time), all or none. False if that would pass it. The
-    agent's own finds count too (agent.discover)."""
+def take_daily(trip, n, who):
+    """Counts n suggestions against this traveler's daily cap (Pacific time), all or none. False if that would pass it.
+    The agent's own finds count toward the traveler whose comment led to them (agent.discover)."""
     day = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
     try:
-        TABLE.update_item(Key={"pk": f"trip#{trip}", "sk": f"suggday#{day}"}, UpdateExpression="ADD #c :n",
+        TABLE.update_item(Key={"pk": f"trip#{trip}", "sk": f"suggday#{day}#{who}"}, UpdateExpression="ADD #c :n",
                           ConditionExpression="attribute_not_exists(#c) OR #c <= :most", ExpressionAttributeNames={"#c": "count"},
                           ExpressionAttributeValues={":n": n, ":most": SUGGEST_DAILY_LIMIT - n})
         return True
@@ -313,7 +318,7 @@ def _approve(trip, meta, body):
 
 
 def _remove(trip, meta, body):
-    """A thumbs down on a Group Tastes spot takes it off the page, unless someone has voted it above MEH (the remover
+    """A thumbs down on a Group Tastes or Coffee spot takes it off the page, unless someone has voted it above MEH (the remover
     included) or another traveler gave it a thumbs up. The page data keeps the spot, so "undo" (anyone's) puts it back.
     Both go in the updates log and bump the trip's revision, so open pages reload."""
     if not _code_ok(meta, body.get("code")):
@@ -323,7 +328,7 @@ def _remove(trip, meta, body):
         return _resp(400, {"ok": False, "error": "name"})
     items = {i.get("id"): i for i in json.loads(meta.get("page") or "{}").get("items", [])}
     it = items.get(iid) if isinstance(iid, str) else None
-    if not it or it.get("group") != "tastes" or it.get("stage"):
+    if not it or it.get("group") not in THUMB_GROUPS or it.get("stage"):
         return _resp(400, {"ok": False, "error": "item"})
     key, now = {"pk": f"trip#{trip}", "sk": f"removed#{iid}"}, int(time.time())
     if undo:

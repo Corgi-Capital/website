@@ -66,8 +66,8 @@ def check_page(page):
     bad_photos = [i.get("id") for i in items if "photos" in i and not (isinstance(i["photos"], list) and
                   all(isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 9 for n in i["photos"]))]
     # Optional labels the page sorts and filters on, and slot: a dedicated itinerary slot (true or e.g. "Fri dinner").
-    allowed = {"kind": {"meal", "sweets", "drinks", "event"}, "tier": {"casual", "mid", "splurge"},
-               "group": {"specialty", "favorite", "tastes", "event"}}
+    allowed = {"kind": {"meal", "sweets", "drinks", "coffee", "event"}, "tier": {"casual", "mid", "splurge"},
+               "group": {"specialty", "favorite", "tastes", "coffee", "event"}}
     bad_labels = [f"{i.get('id')}.{k}" for i in items for k, ok in allowed.items() if k in i and i[k] not in ok]
     bad_slot = [i.get("id") for i in items if "slot" in i and not (isinstance(i["slot"], bool) or (isinstance(i["slot"], str) and 0 < len(i["slot"]) <= 40))]
     bad_flags = [i.get("id") for i in items if "izakaya" in i and not isinstance(i["izakaya"], bool)]   # the Izakaya pill
@@ -79,7 +79,7 @@ def check_page(page):
     bad_time = [r for r, v in (when.items() if isinstance(when, dict) else [("time", None)])
                 if r not in (page.get("regions") or []) or not isinstance(v, list) or not all(isinstance(x, str) and span.match(x) for x in v)]
     sections = page.get("sections", {})
-    known = ("locations", "dates", "lodging", "specialty", "favorite", "tastes", "event")   # must match app.SECTIONS
+    known = ("locations", "dates", "lodging", "specialty", "favorite", "tastes", "coffee", "event")   # must match app.SECTIONS
     if not isinstance(sections, dict) or any(k not in known or not isinstance(v, bool) for k, v in sections.items()):
         raise SystemExit(f"sections must map {known} to true (our picks) or false (suggestions only)")
     if "owner" in page and page["owner"] not in names:

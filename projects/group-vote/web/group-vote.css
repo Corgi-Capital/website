@@ -68,6 +68,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tab[aria-current="page"] .ic{color:var(--gold-2)}
 .tab[aria-current="page"] b{font-weight:700}
 .tab .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-right:-5px;padding:0 6px;border-radius:999px;background:#e5484d;color:#fff;font:700 11px/1 var(--mono)}
+/* A settled part of the plan: a gold lock where the red count would be. */
+.tab .lock{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-5px;border-radius:999px;background:var(--gold);box-shadow:0 0 0 1px rgba(11,11,11,.5)}
+.tab .lock .ic,.tab[aria-current="page"] .lock .ic{width:11px;height:11px;color:var(--bg);stroke-width:2}
 .eats-tools{display:flex;align-items:center;gap:8px}
 .fbtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:5px 13px 5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:13.5px;white-space:nowrap}
 .fbtn .ic{width:14px;height:14px}
@@ -92,6 +95,8 @@ button{font:inherit;color:inherit;cursor:pointer}
   .tab .ic{width:17px;height:17px}
   .tab b{font-weight:500}
   .tab .cnt{position:absolute;top:3px;right:4px;min-width:17px;height:17px;margin:0;padding:0 4px;font-size:10px}
+  .tab .lock{position:absolute;top:3px;right:4px;width:17px;height:17px;margin:0}
+  .tab .lock .ic,.tab[aria-current="page"] .lock .ic{width:10px;height:10px}
 }
 .who .chip{min-height:40px;padding:7px 17px;font-size:15px}
 .who{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-radius:999px}

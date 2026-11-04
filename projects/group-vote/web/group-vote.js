@@ -12,8 +12,11 @@ let TRIP={}, TRAVELERS=[], ITEMS=[], OPTS=[], ALL=[], REGIONS=[];   // filled in
 const VLABEL={3:"Must",2:"I want",1:"Meh",0:"Nah"};   // shown in capitals; 3/2/1/0 points
 const DLABEL={3:"Best",2:"Works",1:"If needed",0:"Can't"};   // the same points, worded for trip-date options
 const labels=it=>it&&it.stage==="dates"?DLABEL:VLABEL;
-// Each region's sections, in order. "tastes" are picked for this group (and where Suggest Spot puts new places).
-const GROUPS=[["specialty","Regional Specialties"],["favorite","Local Favorites"],["tastes","Group Tastes"],["event","Events"]];
+// Each region's sections, in order. "tastes" are picked for this group, and where Suggest Spot puts new places; coffee
+// and things to do (shops, sights, events) it puts under Coffee and Events.
+const GROUPS=[["specialty","Regional Specialties"],["favorite","Local Favorites"],["tastes","Group Tastes"],["coffee","Coffee"],["event","Events"]];
+// The sections Suggest Spot and the agent fill: their cards get thumbs (up: a good pick; down: off the list if unwanted).
+const THUMBS_IN=new Set(["tastes","coffee"]);
 // Every section is ON (our picks plus everyone's suggestions) or OFF (suggestions only: our picks are hidden there and
 // the agent stops adding to it; suggestions still get looked up). Anyone can flip one in Settings, for everyone. Our
 // picks are the trip file's own places and the agent's finds ("found"); a suggestion is what a traveler sent.
@@ -30,6 +33,8 @@ const ICON={
   splurge:'<path d="M4.2 2.5h7.6L14.5 6 8 13.5 1.5 6z"/><path d="M1.5 6h13M6.3 2.5 8 13.5l1.7-11"/>',
   sweets:'<path d="M4.6 7.4a3.4 3.4 0 1 1 6.8 0z"/><path d="M5 7.4 8 14l3-6.6"/>',
   drinks:'<path d="M2.5 2.5h11L8 8.5z"/><path d="M8 8.5v5M5.5 13.5h5"/>',
+  coffee:'<path d="M2.5 6.5h9v3a4 4 0 0 1-4 4h-1a4 4 0 0 1-4-4z"/><path d="M11.5 7.5h.8a2 2 0 0 1 0 4h-1.3"/><path d="M5.6 1.8c-.7.8.7 1.6 0 2.6M8.4 1.8c-.7.8.7 1.6 0 2.6"/>',
+  lock:'<rect x="3.5" y="7.2" width="9" height="6.8" rx="1.6"/><path d="M5.6 7.2V5.4a2.4 2.4 0 0 1 4.8 0v1.8"/>',
   izakaya:'<path d="M6 2h4M6 14h4M8 3.2c-2.9 0-4.6 2.1-4.6 4.8s1.7 4.8 4.6 4.8 4.6-2.1 4.6-4.8S10.9 3.2 8 3.2z"/><path d="M3.5 6.4h9M3.5 9.6h9"/>',
   specialty:'<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>',
   slotted:'<path d="M2.5 3.5h11v10h-11zM2.5 6.5h11M5.5 2v3M10.5 2v3"/><path d="M5.8 10.1l1.6 1.6 3-3"/>',
@@ -47,10 +52,10 @@ const ICON={
   gear:'<circle cx="8" cy="8" r="2.1"/><path d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.5 3.5l1.2 1.2M11.3 11.3l1.2 1.2M3.5 12.5l1.2-1.2M11.3 4.7l1.2-1.2"/><circle cx="8" cy="8" r="4.4"/>',
   funnel:'<path d="M2.5 3.5h11l-4.2 5v4.3l-2.6 1.2V8.5z"/>'
 };
-const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",treats:"sweets",events:"event",todo:"todo"};
+const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",treats:"sweets",coffee:"coffee",events:"event",todo:"todo"};
 const icon=k=>ICON[k]?'<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">'+ICON[k]+'</svg>':"";
 function pill(k,label,cls){ const s=el("span","tag"+(cls?" "+cls:"")); s.innerHTML=icon(k); s.appendChild(document.createTextNode(label)); return s }
-const FILTERS=[["all","All"],["slotted","On the Itinerary"],["casual","Casual"],["splurge","Splurge"],["treats","Sweets & Drinks"],["events","Events"],["todo","Needs Rating"]];
+const FILTERS=[["all","All"],["slotted","On the Itinerary"],["casual","Casual"],["splurge","Splurge"],["treats","Sweets & Drinks"],["coffee","Coffee"],["events","Events"],["todo","Needs Rating"]];
 // Card headings and award badges in title case. Small words stay lower case mid-title, and only a lower-case first
 // letter changes, so "IWSC", "TableCheck" and "2017-19" come through as written.
 const SMALL=new Set(["a","an","and","as","at","but","by","for","from","in","into","nor","of","on","or","per","the","to","via","vs","with"]);
@@ -90,6 +95,7 @@ matcha:`<path d="M18 46 Q20 80 50 80 Q80 80 82 46z" fill="#3d3a36"/><ellipse cx=
 whisky:`<path d="M28 34 L72 34 L68 80 L32 80z" fill="#ffffff" opacity=".55" stroke="#c8d2da" stroke-width="1.5"/><path d="M30 52 L70 52 L68 78 L32 78z" fill="#c8781e"/><rect x="38" y="42" width="18" height="16" rx="3" fill="#eaf4fa" opacity=".85"/>`,
 cocktail:`<path d="M20 28 Q50 62 80 28z" fill="#ffffff" opacity=".55" stroke="#c8d2da" stroke-width="1.5"/><path d="M26 34 Q50 58 74 34z" fill="#d98a2e"/><rect x="48" y="52" width="4" height="24" fill="#c8d2da"/><rect x="36" y="76" width="28" height="4" rx="2" fill="#c8d2da"/><path d="M40 26 q-4 -8 2 -14 q6 6 2 14" fill="#b9c4cc" opacity=".7"/><path d="M52 22 q-4 -8 2 -14" stroke="#b9c4cc" stroke-width="2" fill="none" opacity=".7"/>`,
 boba:`<path d="M30 30 L70 30 L64 84 L36 84z" fill="#d8b48a"/><rect x="28" y="26" width="44" height="6" rx="2" fill="#e8e2d6"/><path d="M58 10 L54 70" stroke="#2f6f9c" stroke-width="5" stroke-linecap="round"/><g fill="#3a2418"><circle cx="42" cy="76" r="3"/><circle cx="50" cy="78" r="3"/><circle cx="58" cy="76" r="3"/><circle cx="46" cy="70" r="3"/><circle cx="56" cy="70" r="3"/></g>`,
+coffee:`<ellipse cx="50" cy="81" rx="36" ry="7" fill="#e9e1d3" stroke="#c9bfae" stroke-width="1.5"/><path d="M72 47 q15 -1 14 11 q-1 11 -20 11" stroke="#c9bfae" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M72 47 q15 -1 14 11 q-1 11 -20 11" stroke="#f4efe6" stroke-width="4" fill="none" stroke-linecap="round"/><ellipse cx="48" cy="40" rx="28" ry="8" fill="#5a341c"/><ellipse cx="48" cy="40" rx="21" ry="6" fill="#a8693a"/><path d="M48 39.5 c-5 -2.6 -4.8 -6 -2.3 -6 c1.2 0 2 .8 2.3 1.6 c.3 -.8 1.1 -1.6 2.3 -1.6 c2.5 0 2.7 3.4 -2.3 6z" fill="#f3e3c8"/><path d="M20 40 L76 40 Q74 75 48 78 Q22 75 20 40z" fill="#f4efe6" stroke="#c9bfae" stroke-width="1.5"/><path d="M25 57 Q48 63 71 57" stroke="#8a6a4a" stroke-width="2.5" fill="none"/><g stroke="#e8e2d6" stroke-width="2.5" fill="none" stroke-linecap="round" opacity=".75"><path d="M38 28 q-4 -5 0 -10 q4 -5 0 -10"/><path d="M50 26 q-4 -5 0 -10 q4 -5 0 -10"/><path d="M62 28 q-4 -5 0 -10 q4 -5 0 -10"/></g>`,
 cake:`<path d="M20 70 L80 70 L80 50 L20 58z" fill="#f3e2c4"/><path d="M20 58 L80 50 L80 42 L20 50z" fill="#fffaf2"/><path d="M20 62 L80 56" stroke="#e6a1b0" stroke-width="3"/><circle cx="66" cy="40" r="6" fill="#d6283b"/><rect x="14" y="70" width="72" height="4" rx="2" fill="#cfd6db"/>`,
 ice:`<rect x="8" y="78" width="84" height="8" fill="#e8f1f7"/><path d="M30 78 L38 30 L50 18 L62 30 L70 78z" fill="#9fd3f0" opacity=".85"/><path d="M40 70 L46 34 M56 70 L54 36" stroke="#ffffff" stroke-width="2" opacity=".8"/><circle cx="50" cy="18" r="14" fill="#5fb3e6" opacity=".25"/><path d="M18 20 l2 4 l4 0 l-3 3 l1 4 l-4 -2 l-4 2 l1 -4 l-3 -3 l4 0z M80 34 l2 4 l4 0 l-3 3 l1 4 l-4 -2 l-4 2 l1 -4 l-3 -3 l4 0z" fill="#ffffff"/>`,
 burger:`<path d="M16 46 Q16 22 50 22 Q84 22 84 46 Z" fill="#e0a24a"/><g fill="#fff4d6"><ellipse cx="38" cy="31" rx="2.2" ry="1.3"/><ellipse cx="52" cy="28" rx="2.2" ry="1.3"/><ellipse cx="64" cy="34" rx="2.2" ry="1.3"/><ellipse cx="45" cy="38" rx="2.2" ry="1.3"/></g><path d="M14 49 q6 6 12 0 t12 0 t12 0 t12 0 t12 0 t12 0" stroke="#7cb342" stroke-width="5" fill="none"/><path d="M18 52 L82 52 L76 61 L68 54 L58 62 L48 54 L38 62 L28 54 Z" fill="#f2c94c"/><rect x="16" y="56" width="68" height="12" rx="6" fill="#6b3a1f"/><path d="M18 70 L82 70 Q82 82 50 82 Q18 82 18 70 Z" fill="#d9953f"/>`,
@@ -221,6 +227,7 @@ function renderSugs(){
     if(s.status==="held"&&isOwner){ btn("Run",()=>approve([s.id],true),"go"); btn("Skip",()=>approve([s.id],false)) }
     else if(kind==="remove"&&s.status==="removed"&&!shown) btn("Undo",()=>undoRemove(s.item));
     else if(kind==="taste"&&s.status==="added") btn("See it",()=>openSuggest("taste"));
+    else if(kind==="spot"&&s.status==="failed"&&s.by===me&&!SUGS.some(x=>x.id>s.id&&x.text===s.text&&x.by===s.by)) btn("Try Again",()=>retrySug(s));
     else if(shown) btn("See it",()=>seeItem(s.item));
     ul.appendChild(li) });
 }
@@ -237,6 +244,14 @@ function seeItem(id){
   if(ITEMS.some(i=>i.id===id)&&!visibleItems().some(i=>i.id===id)){ filter="all"; syncTools(); render() }
   const k=cards[id]; if(!k) return;
   k.c.scrollIntoView({behavior:REDUCED?"auto":"smooth",block:"center"}); k.c.classList.remove("flash"); void k.c.offsetWidth; k.c.classList.add("flash");
+}
+// A suggestion the agent couldn't look up (an error, not a no): sent again as a new one; the button goes once it is.
+async function retrySug(s){
+  if(!me) return nudgeWho();
+  const j=await post(tripPath+"/suggestions",Object.assign({code,name:me,text:s.text,why:s.why||""},OWNER?{owner:OWNER}:{}));
+  if(j&&j.ok){ setSugs(j.suggestions||SUGS); pace(); toast("Our agent is looking it up again") }
+  else if(j&&j.error==="code") lockOut(CHANGED);
+  else toast(j&&j.error==="limit"?"That's your limit for today. Try again tomorrow.":"Couldn't send that. Try again in a moment.");
 }
 const ownerName=()=>TRIP.owner||"the trip's owner";
 // The owner runs (or skips) suggestions held for their OK.
@@ -275,7 +290,7 @@ function openSuggest(kind){
   d.innerHTML='<form class="sg-card" novalidate tabindex="-1"><h2 id="sgTitle">'+(taste?"Group Tastes":"Suggest a Spot")+'</h2>'
     +(taste?'<p class="sg-help">What does this group love, or avoid? Our agent folds it into these notes, then goes looking for spots that fit and adds them under Group Tastes (it never removes any). On those cards, a thumbs up asks for more like it, and a thumbs down takes one off the list if no one has voted it above Meh.</p>'
       +'<label class="sg-l" for="sgText">Add to Group Tastes</label><textarea id="sgText" rows="3" maxlength="500" placeholder="Spicy is always a plus&#10;Alice doesn&#39;t eat raw fish"></textarea>'
-      :'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Our agent looks each one up, writes its card and adds it under Group Tastes (events under Events). It takes a minute or two, and everyone sees it.</p>'
+      :'<p class="sg-help">Paste a Google Maps link, a Tabelog link, or just the name: one per line, up to 5. Our agent looks each one up, writes its card and adds it under Group Tastes (coffee under Coffee; shops, sights and events under Events). It takes a minute or two, and everyone sees it.</p>'
       +'<label class="sg-l" for="sgText">Spots</label><textarea id="sgText" rows="4" maxlength="2600" spellcheck="false" autocapitalize="none" placeholder="https://maps.app.goo.gl/…&#10;https://tabelog.com/…&#10;Or a name and the location"></textarea>')
     +'<p class="sg-msg" role="status" aria-live="polite"></p>'
     +'<div class="sg-row"><button type="button" class="sg-cancel">'+(taste?"Close":"Cancel")+'</button><button type="submit" class="sg-go">'+(taste?"Add":"Suggest")+'</button></div></form>';
@@ -304,7 +319,7 @@ function openSuggest(kind){
     if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); toast(j.held?"Sent. It runs once "+ownerName()+" OKs it":taste?"Our agent is updating Group Tastes":lines.length>1?"Our agent is looking them up":"Our agent is looking it up"); pace();
       const S=$("#sugs"); if(S){ S.open=true; if(S.getBoundingClientRect().top<0) S.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) } }
     else if(j&&j.error==="code") lockOut(CHANGED);
-    else msg.textContent=j&&j.error==="limit"?"That's today's limit for suggestions. Try again tomorrow.":j&&j.error==="text"?(taste?"Keep it to a short comment.":"One link or name per line, up to 5."):"Couldn't send that. Try again in a moment.";
+    else msg.textContent=j&&j.error==="limit"?"That's your limit for today. Try again tomorrow.":j&&j.error==="text"?(taste?"Keep it to a short comment.":"One link or name per line, up to 5."):"Couldn't send that. Try again in a moment.";
   });
   if(taste) f.focus({preventScroll:true}); else ta.focus();   // the tastes open to read: no keyboard popping up over them
 }
@@ -330,7 +345,7 @@ function saveVote(){
 // Without them: positions 1, 2, 3, then 0, because Google's first photo is usually the storefront.
 const PHOTO_PX=960;   // one size for strip and full screen, so each photo is fetched (and counted) once per page view
 const DEFAULT_PICKS=[1,2,3,0];
-let placesLib=null, budgetSpent=false, mapsDown=false, photosDown=false, worked=0, failRun=0, active=0, shownOk=0, badRun=0;
+let placesLib=null, budgetSpent=false, mapsDown=false, photosDown=false, worked=0, failRun=0, active=0, shownOk=0, badRun=0, photoTries=0;
 const queue=[], tried={};
 window.gm_authFailure=()=>{ mapsDown=true };
 function loadMaps(key){   // the key comes with the trip, after the password
@@ -352,14 +367,23 @@ function mapsLink(it){
 }
 // "Google Maps" as Google's attribution rules want it: exactly that text, never translated.
 const gm=()=>{ const t=el("span",null,"Google Maps"); t.setAttribute("translate","no"); return t };
-function banner(t){ const b=$("#setupBanner"); if(b){ b.hidden=false; b.textContent=t } }
+// The note under the title when places can't show photos: only while no photo shows on this page. Once any has (some
+// come from the browser's cache even while Google refuses new ones), a place without one just keeps its illustration.
+function photoNote(){
+  const b=$("#setupBanner"); if(!b) return;
+  const at=photosDown&&!budgetSpent?quotaReset():"";
+  const why=budgetSpent?"This month's photo budget is used up, so places show illustrations until next month. Each Google Maps button still has every photo."
+    :photosDown?"Google isn't sending photos right now. That's usually its daily photo limit"+(at?", which resets at "+at+" your time":"")+". Until then places show illustrations, and each Google Maps button has every photo.":"";
+  if(why&&!shownOk){ b.hidden=false; b.textContent=why; b.dataset.photo="1" }
+  else if(b.dataset.photo){ b.hidden=true; b.textContent=""; delete b.dataset.photo }
+}
 // Only the server's own "limit" answer means the budget is spent; a throttle or network error is just a failed try.
 async function reserve(kind){
   if(budgetSpent) return false;
   const j=await post("/usage",{trip:TRIP_ID,code,kinds:[kind]});
   if(j&&j.ok) return true;
   if(j&&j.error==="code") lockOut(CHANGED);
-  else if(j&&j.error==="limit"&&!budgetSpent){ budgetSpent=true; banner("This month's photo budget is used up, so places show illustrations until next month. Each Google Maps button still has every photo.") }
+  else if(j&&j.error==="limit"&&!budgetSpent){ budgetSpent=true; photoNote() }
   return false;
 }
 // The page can't see why Google refused (the browser hides the answer), but it's nearly always the daily photo quota,
@@ -371,10 +395,7 @@ function quotaReset(){
     return new Date(now.getTime()+left*1000).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
   }catch(e){ return "" }
 }
-function photosOff(){
-  if(photosDown) return; photosDown=true; const at=quotaReset();
-  banner("Google isn't sending photos right now. That's usually its daily photo limit"+(at?", which resets at "+at+" your time":"")+". Until then places show illustrations, and each Google Maps button has every photo.");
-}
+function photosOff(){ if(photosDown) return; photosDown=true; photoNote() }
 function wantPhoto(id){ if(tried[id]) return; tried[id]=true; queue.push(id); pumpPhotos() }
 function pumpPhotos(){
   while(placesLib&&!mapsDown&&!photosDown&&!budgetSpent&&queue.length&&active<(worked?3:1)){
@@ -412,9 +433,11 @@ async function fill(ph,p,img,done){
   const s=await ensureShot(ph,p);
   if(!s||!img.isConnected||img.dataset.p===String(p)) return;
   img.dataset.p=p; img.dataset.credit=s.credit; if(s.creditUrl) img.dataset.creditUrl=s.creditUrl;   // the photographer, as metadata only
-  img.onload=()=>{ shownOk++; badRun=0; done(s) };
-  img.onerror=()=>{ delete img.dataset.p; if(!shownOk||++badRun>=3) photosOff() };
-  img.src=s.url;
+  img.onload=()=>{ photoTries--; shownOk++; badRun=0; photoNote(); done(s) };
+  // Google refused it. Stop asking (each try costs budget) after two refusals with nothing shown and nothing else on its
+  // way, or three in a row, which is nearly always its daily photo limit. One bad photo stops nothing.
+  img.onerror=()=>{ photoTries--; delete img.dataset.p; badRun++; if((!shownOk&&photoTries<=0&&badRun>=2)||badRun>=3) photosOff() };
+  photoTries++; img.src=s.url;
 }
 // A card's photo strip: swipe it (or use the arrows), tap a photo for full screen. The illustration shows until the
 // first photo has loaded, and for good if none does. No photographer credit here: Google allows leaving it off
@@ -506,6 +529,7 @@ function visibleItems(){
   if(filter==="casual") return ITEMS.filter(i=>i.tier==="casual");
   if(filter==="splurge") return ITEMS.filter(i=>i.tier==="splurge");
   if(filter==="treats") return ITEMS.filter(i=>i.kind==="sweets"||i.kind==="drinks");
+  if(filter==="coffee") return ITEMS.filter(i=>i.kind==="coffee"||i.group==="coffee");
   if(filter==="events") return ITEMS.filter(i=>i.kind==="event"||i.group==="event");
   if(filter==="todo") return ITEMS.filter(i=>typeof mineOf(i.id)!=="number");
   if(filter==="slotted") return ITEMS.filter(i=>i.slot);
@@ -537,6 +561,7 @@ function card(it,rank){
   if(TIER[it.tier]) tags.appendChild(pill(it.tier,TIER[it.tier]));
   if(it.izakaya) tags.appendChild(pill("izakaya","Izakaya"));
   if(it.kind==="sweets"||it.kind==="drinks") tags.appendChild(pill(it.kind,it.kind==="sweets"?"Sweets":"Drinks"));
+  if(it.kind==="coffee") tags.appendChild(pill("coffee","Coffee"));
   if(it.kind==="event") tags.appendChild(pill("event","Event"));
   // IG: Instagram creators feature it; links to one of their posts (not the place's own account).
   if(/^https:\/\/(www\.)?instagram\.com\/(p|reel)\//.test(it.ig||"")){ const a=el("a","tag ig"); a.innerHTML=icon("ig"); a.appendChild(document.createTextNode("IG"));
@@ -558,9 +583,9 @@ function card(it,rank){
     g.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
     g.appendChild(gm()); g.setAttribute("aria-label",it.place+" on Google Maps: every photo and review"); links.appendChild(g) }
   if(links.firstChild) act.appendChild(links);
-  // Group Tastes: a thumbs up for a good pick (the agent looks for more like it), a thumbs down to take it off the list.
+  // Group Tastes and Coffee: a thumbs up for a good pick (the agent looks for more like it), a thumbs down to take it off the list.
   let th=null;
-  if(it.group==="tastes"&&!it.stage){
+  if(THUMBS_IN.has(it.group)&&!it.stage){
     th={up:el("button","th up"), down:el("button","th down")}; th.up.type=th.down.type="button";
     th.up.innerHTML=icon("up"); th.up.appendChild(el("span","th-n")); th.down.innerHTML=icon("up"); th.down.appendChild(document.createTextNode("Remove"));
     th.up.onclick=()=>thumbUp(it.id); th.down.onclick=()=>removeSpot(it.id);
@@ -718,7 +743,7 @@ function cast(id,v){
   if(cur[id]===v) delete cur[id]; else cur[id]=v;
   ballots=Object.assign({},ballots,{[me]:cur}); patch(id); refreshBar(); saveVote();
 }
-// Group Tastes thumbs. Up: a good pick, which the agent's next search uses as a model. Down: takes the spot off the list,
+// Group Tastes and Coffee thumbs. Up: a good pick, which the agent's next search uses as a model. Down: takes the spot off the list,
 // but only while no one has voted it above MEH (yourself included) and no one else has given it a thumbs up. Anyone can
 // undo it, from the toast or the Updates panel. The server checks the same rule.
 function keepers(id){ return TRAVELERS.filter(p=>(ballots[p]&&ballots[p][id]>=2)||(p!==me&&(THUMBS[p]||[]).includes(id))) }
@@ -790,15 +815,23 @@ function applyPage(){
 function renderTabs(){
   const T=$("#tabs"); if(!T) return; T.textContent="";
   T.hidden=PAGES.filter(([k])=>pageOk(k)).length<2; if(T.hidden) return;
-  const D=TRIP.dates, dn=OPTS.filter(i=>i.stage==="dates").length, L=TRIP.lodging||[], open=L.filter(x=>x.status!=="booked").length;
+  const D=TRIP.dates, dn=OPTS.filter(i=>i.stage==="dates").length, L=TRIP.lodging||[], open=L.filter(x=>x.status!=="booked").length,
+    ln=OPTS.filter(i=>i.stage==="lodging").length;
   const note={locations:TRIP.locations&&TRIP.locations.decided?"Decided":"Vote", dates:D&&D.decided?"Decided":dn+(dn===1?" Option":" Options"),
     lodging:open?open+" to Decide":"All Booked", eats:spotsN()};
-  const left={locations:unrated("locations"), dates:D&&D.decided?0:unrated("dates"), lodging:unrated("lodging"), eats:me?ITEMS.filter(i=>typeof mineOf(i.id)!=="number").length:0};
+  // Trip Locations, Trip Dates and Lodging: a gold lock once settled, else a red count of the options on the ballot (or,
+  // before any are listed, of the nights left to pick). Eats & Events: a red count of the spots you haven't rated.
+  const locked={locations:!!(TRIP.locations&&TRIP.locations.decided), dates:!!(D&&D.decided), lodging:L.length>0&&!open};
+  const left={locations:0, dates:dn, lodging:ln||open, eats:me?ITEMS.filter(i=>typeof mineOf(i.id)!=="number").length:0};
+  const what={dates:n=>n+(n===1?" date option":" date options"), lodging:n=>ln?n+(n===1?" lodging option":" lodging options"):n+(n===1?" night":" nights")+" left to pick",
+    eats:n=>n+" for you to rate"};
   PAGES.forEach(([k,label,ic])=>{ if(!pageOk(k)) return;
     const b=el("button","tab"); b.type="button"; b.dataset.p=k; b.setAttribute("aria-current",k===PAGE?"page":"false"); b.innerHTML=icon(ic);
     const t=el("b"); if(k==="eats") t.textContent=TRIP.spotsTitle||"Eats & Events"; else { if(k!=="lodging") t.appendChild(el("span","tw","Trip ")); t.append(label) }
     b.append(t,el("small",null,note[k]));
-    if(left[k]){ const c=el("span","cnt",left[k]>99?"99+":String(left[k])); c.title=left[k]+" for you to vote on"; b.appendChild(c) }
+    if(locked[k]){ const c=el("span","lock"); c.innerHTML=icon("lock"); c.setAttribute("role","img"); c.setAttribute("aria-label",k==="lodging"?"All booked":"Decided");
+      c.title=k==="lodging"?"All booked":"Decided"; b.appendChild(c) }
+    else if(left[k]){ const c=el("span","cnt",left[k]>99?"99+":String(left[k])); c.title=(what[k]||(n=>n+" options"))(left[k]); b.appendChild(c) }
     b.onclick=()=>setPage(k); T.appendChild(b) });
 }
 function renderStages(){
@@ -907,7 +940,7 @@ function mountBallot(){
     a.onclick=e=>{ e.preventDefault(); if(filter!=="all"){ filter="all"; syncTools(); render() }
       const s=document.getElementById("region-"+slug(g)); if(s) s.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) };
     jump.appendChild(a) });
-  const F=$("#filters"), has={slotted:ITEMS.some(i=>i.slot), casual:ITEMS.some(i=>i.tier==="casual"), splurge:ITEMS.some(i=>i.tier==="splurge"), treats:ITEMS.some(i=>i.kind==="sweets"||i.kind==="drinks")};
+  const F=$("#filters"), has={slotted:ITEMS.some(i=>i.slot), casual:ITEMS.some(i=>i.tier==="casual"), splurge:ITEMS.some(i=>i.tier==="splurge"), treats:ITEMS.some(i=>i.kind==="sweets"||i.kind==="drinks"), coffee:ITEMS.some(i=>i.kind==="coffee"||i.group==="coffee")};
   FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip"); b.innerHTML=icon(FILTER_ICON[f]); b.appendChild(document.createTextNode(label)); b.type="button"; b.dataset.f=f;
     if(f==="todo"){ const c=el("span","cnt"); c.id="todoCount"; c.hidden=true; b.appendChild(c) }   // how many you haven't rated
     F.appendChild(b) });
