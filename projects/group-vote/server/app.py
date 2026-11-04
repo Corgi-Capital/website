@@ -20,10 +20,12 @@ Routes
   POST /trips/{trip}/suggestions       body {"code", "name", "text", "why", "owner"} -> {"ok": true, "suggestions": [...],
                                        "held": bool}. One suggestion per line of text (up to 5): a Google Maps link, a
                                        Tabelog link or a name. Each is queued and the agent function (agent.py) is invoked to
-                                       review and add it. While the agent runs on the owner's Claude subscription
-                                       (AGENT_AUTH=subscription), only suggestions sent with the owner's code run at once;
-                                       anyone else's are "held" until the owner OKs them, so the subscription only ever runs
-                                       the owner's own requests. 429 "limit" past the trip's daily cap.
+                                       review and add it. With AGENT_HOLD=owner, only suggestions sent with the owner's code
+                                       run at once and anyone else's are "held" until the owner OKs them. 429 "limit" past
+                                       the trip's daily cap.
+  POST /trips/{trip}/sections          body {"code", "name", "section", "on"} -> {"ok": true, "sections": {...},
+                                       "suggestions": [...]}. Turns a section's picks on, or off (suggestions only), for
+                                       everyone; logged in the updates. The page data carries "sections": {key: bool}.
   POST /trips/{trip}/approve           body {"code", "owner", "ids", "run"} -> {"ok": true, "suggestions": [...]}. The owner
                                        runs held suggestions (run: true) or skips them (run: false). 403 "owner" without the
                                        owner's code.
@@ -37,9 +39,10 @@ Table layout (single table, on-demand)
   pk = "trip#<trip>", sk = "meta"          travelers [names], code_hash (see code_hash), owner_hash (the owner's code, same
                                            hash), page (page data as JSON), rev, created, updated
   pk = "trip#<trip>", sk = "ballot#<name>" votes {item_id: int}, up [item ids with this traveler's thumbs up], updated
+  pk = "trip#<trip>", sk = "sections"      s_<section> (bool): a section flipped on the page; wins over the trip file's "sections"
   pk = "trip#<trip>", sk = "removed#<item>" by, at, place: a Group Tastes spot the group took off the page. The page data
                                            keeps the spot, so undo (or suggesting it again) brings it back as it was.
-  pk = "trip#<trip>", sk = "sugg#<ms>-<r>" by, text, why, kind (spot, taste, remove), status (queued, working, added,
+  pk = "trip#<trip>", sk = "sugg#<ms>-<r>" by, text, why, kind (spot, taste, remove, section), status (queued, working, added,
                                            duplicate, rejected, failed; held, declined; removed, restored), reason, item (the card's id),
                                            restoredBy, created, updated
   pk = "trip#<trip>", sk = "suggday#<date>" count (suggestions that day, Pacific time)
@@ -60,9 +63,13 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 TABLE = boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])
 SSM = boto3.client("ssm")   # the Maps key and the agent's Claude credential, as SecureString parameters (free)
-# "subscription": the agent's credential is the owner's Claude subscription, which may only run the owner's own requests,
-# so anyone else's suggestions wait for the owner's OK. "api": an API key, so everyone's suggestions run.
-AGENT_AUTH = os.environ.get("AGENT_AUTH", "subscription")
+# "none" (the default): every traveler's suggestion runs at once. The owner pre-approves them as their own requests (Bill,
+# 2026-11-04, for his private trip page). "owner": anyone else's wait for the owner's OK, given on a device holding the
+# owner's code (an owner link); for a page where the owner's Claude subscription mustn't run other people's requests.
+AGENT_HOLD = os.environ.get("AGENT_HOLD", "none")
+# The page's sections. Each shows our picks plus everyone's suggestions (on), or suggestions only (off: our picks are
+# hidden there and the agent stops adding to it; suggestions are still looked up). Anyone can flip one.
+SECTIONS = ("locations", "dates", "lodging", "specialty", "favorite", "tastes", "event")
 LAMBDA = boto3.client("lambda")
 SUGGEST_DAILY_LIMIT = int(os.environ.get("SUGGEST_DAILY_LIMIT", "25"))
 SUGGEST_SHOW_DAYS = 7
@@ -172,7 +179,8 @@ def _page(trip, meta):
     gone = _removed(trip)
     if gone:
         page["items"] = [i for i in page.get("items", []) if i.get("id") not in gone]
-    page["agentHold"] = AGENT_AUTH == "subscription"   # the page says suggestions wait for the owner's OK
+    page["agentHold"] = AGENT_HOLD == "owner"   # the page says suggestions wait for the owner's OK
+    page["sections"] = _sections(trip, page)
     doc = _tastes(trip)
     if doc:   # the doc, once anyone has commented, wins over the trip file's starting text
         page.update(tastes=doc.get("brief", page.get("tastes", "")), tastesLine=doc.get("line", page.get("tastesLine", "")))
@@ -226,7 +234,7 @@ def _suggest(trip, meta, body):
         return _resp(400, {"ok": False, "error": "text"})
     if not take_daily(trip, len(lines)):
         return _resp(429, {"ok": False, "error": "limit"})
-    held = AGENT_AUTH == "subscription" and not _owner_ok(meta, body.get("owner"))
+    held = AGENT_HOLD == "owner" and not _owner_ok(meta, body.get("owner"))
     now, ids = time.time(), []
     for n, line in enumerate(lines):
         sk = f"sugg#{int(now * 1000) + n:013d}-{os.urandom(2).hex()}"
@@ -236,6 +244,34 @@ def _suggest(trip, meta, body):
     if not held:
         LAMBDA.invoke(FunctionName=os.environ["AGENT_FUNCTION"], InvocationType="Event", Payload=json.dumps({"trip": trip, "ids": ids}).encode())
     return _resp(200, {"ok": True, "suggestions": _suggestions(trip), "held": held})
+
+
+def _sections(trip, page):
+    """Each section's state: True shows our picks, False is suggestions only. The trip file's "sections" sets where it
+    starts; a flip on the page wins."""
+    on = {k: True for k in SECTIONS}
+    on.update({k: v for k, v in (page.get("sections") or {}).items() if k in SECTIONS and isinstance(v, bool)})
+    row = TABLE.get_item(Key={"pk": f"trip#{trip}", "sk": "sections"}, ConsistentRead=True).get("Item") or {}
+    on.update({k: bool(row[f"s_{k}"]) for k in SECTIONS if f"s_{k}" in row})
+    return on
+
+
+def _set_section(trip, meta, body):
+    """Anyone turns a section's picks on or off, for everyone (the page asks them to confirm). Logged; open pages reload."""
+    if not _code_ok(meta, body.get("code")):
+        return _resp(403, {"ok": False, "error": "code"})
+    name, key, on = body.get("name"), body.get("section"), body.get("on")
+    if name not in meta.get("travelers", []):
+        return _resp(400, {"ok": False, "error": "name"})
+    if key not in SECTIONS or not isinstance(on, bool):
+        return _resp(400, {"ok": False, "error": "section"})
+    now = int(time.time())
+    TABLE.update_item(Key={"pk": f"trip#{trip}", "sk": "sections"}, UpdateExpression="SET #k = :v, updated = :u",
+                      ExpressionAttributeNames={"#k": f"s_{key}"}, ExpressionAttributeValues={":v": on, ":u": now})
+    TABLE.put_item(Item={"pk": f"trip#{trip}", "sk": f"sugg#{int(time.time() * 1000):013d}-{os.urandom(2).hex()}", "by": name,
+                         "text": key, "kind": "section", "status": "on" if on else "off", "created": now, "updated": now})
+    bump_rev(trip)
+    return _resp(200, {"ok": True, "sections": _sections(trip, json.loads(meta.get("page") or "{}")), "suggestions": _suggestions(trip)})
 
 
 def take_daily(trip, n):
@@ -376,12 +412,12 @@ def handler(event, _context):
             return _resp(200, {"ok": True, **live})
         return _resp(200, {"ok": True, "trip": _page(trip, meta), "mapsApiKey": _get_maps_key(), **live})
 
-    if method == "POST" and len(parts) == 3 and parts[2] in ("suggestions", "remove", "approve"):
+    if method == "POST" and len(parts) == 3 and parts[2] in ("suggestions", "remove", "approve", "sections"):
         try:
             body = json.loads(event.get("body") or "{}")
         except json.JSONDecodeError:
             return _resp(400, {"ok": False, "error": "json"})
-        route = {"suggestions": _suggest, "remove": _remove, "approve": _approve}[parts[2]]
+        route = {"suggestions": _suggest, "remove": _remove, "approve": _approve, "sections": _set_section}[parts[2]]
         return route(trip, meta, body if isinstance(body, dict) else {})
 
     if method == "POST" and len(parts) == 3 and parts[2] == "ballots":

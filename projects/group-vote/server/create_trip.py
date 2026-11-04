@@ -78,6 +78,10 @@ def check_page(page):
     when = page.get("time", {})
     bad_time = [r for r, v in (when.items() if isinstance(when, dict) else [("time", None)])
                 if r not in (page.get("regions") or []) or not isinstance(v, list) or not all(isinstance(x, str) and span.match(x) for x in v)]
+    sections = page.get("sections", {})
+    known = ("locations", "dates", "lodging", "specialty", "favorite", "tastes", "event")   # must match app.SECTIONS
+    if not isinstance(sections, dict) or any(k not in known or not isinstance(v, bool) for k, v in sections.items()):
+        raise SystemExit(f"sections must map {known} to true (our picks) or false (suggestions only)")
     if "owner" in page and page["owner"] not in names:
         raise SystemExit("owner must be one of the travelers")
     if bad_stage or bad_dates or bad_stays:

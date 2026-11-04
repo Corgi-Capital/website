@@ -7,13 +7,21 @@
 "use strict";
 const CFG=Object.assign({apiUrl:""},window.GROUP_VOTE||{});
 const TRIP_ID=String((window.TRIP&&window.TRIP.id)||"");
-let TRIP={}, TRAVELERS=[], ITEMS=[], OPTS=[], REGIONS=[];   // filled in from the server once the password checks out
+let TRIP={}, TRAVELERS=[], ITEMS=[], OPTS=[], ALL=[], REGIONS=[];   // filled in from the server once the password checks out
 // ITEMS: the places on the ballot. OPTS: trip-date and lodging options ("stage": "dates" or "lodging"), voted the same way.
 const VLABEL={3:"Must",2:"I want",1:"Meh",0:"Nah"};   // shown in capitals; 3/2/1/0 points
 const DLABEL={3:"Best",2:"Works",1:"If needed",0:"Can't"};   // the same points, worded for trip-date options
 const labels=it=>it&&it.stage==="dates"?DLABEL:VLABEL;
 // Each region's sections, in order. "tastes" are picked for this group (and where Suggest Spot puts new places).
 const GROUPS=[["specialty","Regional Specialties"],["favorite","Local Favorites"],["tastes","Group Tastes"],["event","Events"]];
+// Every section is ON (our picks plus everyone's suggestions) or OFF (suggestions only: our picks are hidden there and
+// the agent stops adding to it; suggestions still get looked up). Anyone can flip one in Settings, for everyone. Our
+// picks are the trip file's own places and the agent's finds ("found"); a suggestion is what a traveler sent.
+const SECT=[["locations","Trip Locations"],["dates","Trip Dates"],["lodging","Lodging"]].concat(GROUPS);
+const secOn=k=>!(TRIP.sections&&TRIP.sections[k]===false);
+const aiPick=i=>!i.suggestedBy||!!i.found;
+const hiddenPick=i=>!secOn(i.stage||i.group||"")&&aiPick(i);
+const secLabel=k=>(SECT.find(([x])=>x===k)||[k,k])[1];
 const TIER={casual:"Casual",mid:"Mid-Range",splurge:"Splurge"};
 // Small line icons for the card pills and the matching filters (16px grid, drawn in the text color).
 const ICON={
@@ -34,7 +42,9 @@ const ICON={
   comment:'<path d="M2.5 3.5h11v7.5h-6.2L4.5 13.5V11h-2z"/><path d="M5.5 6.5h5M5.5 8.5h3"/>',
   up:'<path d="M2.5 7.5h2.6v6H2.5z"/><path d="M5.1 7.5l2.6-4.9c1 0 1.7.9 1.5 1.8l-.5 2.4h3.6a1.3 1.3 0 0 1 1.3 1.6l-1 4.3a1.3 1.3 0 0 1-1.3 1H5.1"/>',
   dates:'<rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3M5 9.2h1.4M7.3 9.2h1.4M9.6 9.2H11M5 11.4h1.4M7.3 11.4h1.4"/>',
-  stay:'<path d="M1.5 3.5v10M1.5 10.5h13v3"/><circle cx="4.3" cy="8.3" r="1.4"/><path d="M7 10.5v-3h5a2.5 2.5 0 0 1 2.5 2.5v.5"/>'
+  stay:'<path d="M1.5 3.5v10M1.5 10.5h13v3"/><circle cx="4.3" cy="8.3" r="1.4"/><path d="M7 10.5v-3h5a2.5 2.5 0 0 1 2.5 2.5v.5"/>',
+  pin:'<path d="M8 14.2s4.6-4.4 4.6-7.7a4.6 4.6 0 0 0-9.2 0c0 3.3 4.6 7.7 4.6 7.7z"/><circle cx="8" cy="6.5" r="1.7"/>',
+  gear:'<circle cx="8" cy="8" r="2.1"/><path d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.5 3.5l1.2 1.2M11.3 11.3l1.2 1.2M3.5 12.5l1.2-1.2M11.3 4.7l1.2-1.2"/><circle cx="8" cy="8" r="4.4"/>'
 };
 const FILTER_ICON={slotted:"slotted",casual:"casual",splurge:"splurge",treats:"sweets",events:"event",todo:"todo"};
 const icon=k=>ICON[k]?'<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">'+ICON[k]+'</svg>':"";
@@ -175,7 +185,7 @@ async function reloadTrip(){
 function setTrip(t){
   TRIP=t; TRAVELERS=TRIP.travelers||[]; REGIONS=TRIP.regions||[];
   const all=(TRIP.items||[]).map(i=>Object.assign({},i,{dish:titleCase(i.dish),badge:titleCase(i.badge)}));
-  ITEMS=all.filter(i=>!i.stage); OPTS=all.filter(i=>i.stage);
+  ALL=all; ITEMS=all.filter(i=>!i.stage&&!hiddenPick(i)); OPTS=all.filter(i=>i.stage&&!hiddenPick(i));   // OFF sections drop our picks
 }
 
 // ---------- Suggest Spot ----------
@@ -186,6 +196,7 @@ let REV=0, SUGS=[], paceTimer=0;
 const SUG_STATE={held:"Awaiting OK",declined:"Skipped",queued:"Waiting",working:"Looking it up",added:"Added",duplicate:"Already listed",rejected:"Couldn't add",failed:"Couldn't add"};
 const TASTE_STATE={held:"Awaiting OK",declined:"Skipped",queued:"Waiting",working:"Updating tastes",added:"Tastes updated",rejected:"Not a taste",failed:"Couldn't update"};
 const REMOVE_STATE={removed:"Removed",restored:"Back on the List"};
+const SECTION_STATE={on:"Picks On",off:"Suggestions Only"};
 const sugPending=()=>SUGS.some(s=>s.status==="queued"||s.status==="working");
 function pace(){ clearTimeout(paceTimer); if(sugPending()) paceTimer=setTimeout(loadVotes,5000) }
 function setSugs(xs){ const before=JSON.stringify(SUGS); SUGS=xs; if(JSON.stringify(SUGS)!==before) renderSugs() }
@@ -194,15 +205,15 @@ function renderSugs(){
   const S=$("#sugs"); if(!S) return;
   S.hidden=!SUGS.length; if(!SUGS.length) return;
   const sum=S.querySelector("summary"), ul=S.querySelector("ul"), busy=SUGS.filter(s=>s.status==="queued"||s.status==="working").length, held=SUGS.filter(s=>s.status==="held").length;
-  sum.textContent=""; sum.appendChild(el("span","sugs-h","Updates"));
+  sum.textContent=""; sum.appendChild(el("span","sugs-h","Recent Updates"));
   sum.appendChild(busy?el("span","sugs-busy",busy+" in progress"):held?el("span","sugs-held",held+(isOwner?" waiting for your OK":" waiting for "+ownerName()+"'s OK"))
     :el("span","sugs-last",lastLine(SUGS[0])));
   ul.textContent="";
   SUGS.slice(0,12).forEach(s=>{
     const kind=s.kind||"spot", li=el("li","sug "+s.status), going=s.status==="queued"||s.status==="working", shown=!!s.item&&ITEMS.some(i=>i.id===s.item);
-    li.appendChild(el("span","sug-st",(kind==="taste"?TASTE_STATE:kind==="remove"?REMOVE_STATE:SUG_STATE)[s.status]||s.status));
+    li.appendChild(el("span","sug-st",(kind==="taste"?TASTE_STATE:kind==="remove"?REMOVE_STATE:kind==="section"?SECTION_STATE:SUG_STATE)[s.status]||s.status));
     const wait=s.status==="held"||s.status==="declined";
-    li.appendChild(el("span","sug-txt",kind==="remove"?s.text+" · "+s.by+(s.restoredBy?", back by "+s.restoredBy:"")
+    li.appendChild(el("span","sug-txt",kind==="section"?secLabel(s.text)+" · "+s.by:kind==="remove"?s.text+" · "+s.by+(s.restoredBy?", back by "+s.restoredBy:"")
       :going||wait?sugWhat(s.text)+" from "+s.by+(s.status==="held"&&!isOwner?" · runs once "+ownerName()+" OKs it":"")
       :money(s.reason||sugWhat(s.text))+" · "+s.by));
     const btn=(t,f,c)=>{ const a=el("button","sug-see"+(c?" "+c:""),t); a.type="button"; a.onclick=f; li.appendChild(a) };
@@ -216,6 +227,7 @@ function renderSugs(){
 function lastLine(s){
   const it=s.item&&byId(s.item), back=s.kind==="remove"&&s.status==="restored", who=" · "+(back&&s.restoredBy?s.restoredBy:s.by);
   if(s.kind==="remove") return (back?"Back on the list: ":"Removed ")+s.text+who;
+  if(s.kind==="section") return (s.status==="on"?"Our picks on in ":"Suggestions only in ")+secLabel(s.text)+who;
   if(s.kind==="taste") return (TASTE_STATE[s.status]||s.status)+who;
   return (s.status==="added"&&it?"Added "+it.place:(SUG_STATE[s.status]||s.status)+": "+sugWhat(s.text))+who;
 }
@@ -634,6 +646,14 @@ function stays(r){
   }).filter(x=>x&&x.e>x.s);
 }
 const awake=x=>{ let h=0; for(let d=Math.floor(x.s/DAY)*DAY; d<x.e; d+=DAY) h+=Math.max(0,Math.min(x.e,d+23*HR)-Math.max(x.s,d+9*HR)); return h/HR };
+// A region's stays, one per line: weekday, date and time, to the end (its date only when it's another day).
+function whenLines(w){
+  const p=el("p","when");
+  w.stays.forEach(([w1,d1,c1,w2,d2,c2])=>{ const st=el("span","stay");
+    st.append(el("span","w",w1)," ",el("span","d",d1)," ",el("span","t",c1),el("span","sep"," – "));
+    if(d2) st.append(el("span","w",w2)," ",el("span","d",d2)," "); st.appendChild(el("span","t",c2)); p.appendChild(st) });
+  return p;
+}
 function when(r){
   const xs=stays(r); if(!xs.length) return null;
   let hrs=xs.reduce((t,x)=>t+awake(x),0);
@@ -669,14 +689,12 @@ function render(){
       const s=el("section","region"); s.id="region-"+slug(g);
       const w=when(g), h=el(lv?"h3":"h2","sec",g);
       h.appendChild(el("small",null,its.length+(its.length===1?" Spot":" Spots")+(w?" · "+w.days+(w.days==="1.0"?" Day":" Days"):""))); s.appendChild(h);
-      if(w){ const p=el("p","when"); w.stays.forEach(([w1,d1,c1,w2,d2,c2],n)=>{ if(n) p.appendChild(el("span","sep",", "));
-        const st=el("span","stay"); st.append(el("span","w",w1)," ",el("span","d",d1)," ",el("span","t",c1),el("span","sep"," – "));
-        if(d2) st.append(el("span","w",w2)," ",el("span","d",d2)," "); st.appendChild(el("span","t",c2)); p.appendChild(st) }); s.appendChild(p) }
+      if(w) s.appendChild(whenLines(w));
       const known=(TRIP.knownFor||{})[g]; if(known&&known.length) s.appendChild(el("p","known","Known for "+known.join(", ")));
       const parts=GROUPS.map(([k,label])=>[k,label,its.filter(i=>i.group===k)]);
       parts.push(["",TRIP.otherLabel||"More to Try",its.filter(i=>!GROUPS.some(([k])=>k===i.group))]);
       const used=parts.filter(([,,v])=>v.length);
-      used.forEach(([k,label,v])=>{ if(used.length>1){ const sh=el(lv?"h4":"h3","sub",label); sh.appendChild(el("small",null,String(v.length)));
+      used.forEach(([k,label,v])=>{ if(used.length>1){ const sh=el(lv?"h4":"h3","sub",label); sh.appendChild(el("small",null,String(v.length))); offTag(sh,k);
           if(k==="tastes"){ const t=el("button","tastes-btn"); t.type="button"; t.innerHTML=icon("comment"); t.title="See or add to Group Tastes"; t.setAttribute("aria-label","See or add to Group Tastes"); t.onclick=()=>openSuggest("taste"); sh.appendChild(t) }
           s.appendChild(sh)
           if(k==="tastes"&&TRIP.tastesLine) s.appendChild(el("p","subnote",TRIP.tastesLine)) }
@@ -731,7 +749,9 @@ async function undoRemove(id){
 // Before the places, in the order a trip gets planned: when, then where to stay. Each is either settled (the trip's
 // "dates.decided"; a stay's "status": "booked") or a vote on its options (items with "stage": "dates", or "lodging" and
 // the open stay's id in "stay"), on the same cards and votes as the places. A trip with neither looks as it always did.
-const hasStages=()=>!!(TRIP.dates||(TRIP.lodging||[]).length||OPTS.length);
+const hasStages=()=>!!(TRIP.locations||TRIP.dates||(TRIP.lodging||[]).length||OPTS.length);
+// "Suggestions Only" on a section's heading while its picks are off.
+function offTag(h,k){ if(k&&!secOn(k)){ const t=el("span","off-tag","Suggestions Only"); t.title="Our picks are off here: only the group's suggestions show"; h.appendChild(t) } return h }
 const openStay=id=>(TRIP.lodging||[]).some(x=>x.id===id&&x.status!=="booked");
 const unrated=st=>me?OPTS.filter(i=>i.stage===st&&(st!=="lodging"||openStay(i.stay))&&typeof mineOf(i.id)!=="number").length:0;
 const spotsN=()=>ITEMS.length+(ITEMS.length===1?" Spot":" Spots");
@@ -743,6 +763,7 @@ function renderSteps(){
     a.onclick=e=>{ e.preventDefault(); const t=document.getElementById(id); if(t) t.scrollIntoView({behavior:REDUCED?"auto":"smooth"}) };
     S.appendChild(a) };
   const D=TRIP.dates, dn=OPTS.filter(i=>i.stage==="dates").length, L=TRIP.lodging||[], open=L.filter(x=>x.status!=="booked").length;
+  if(TRIP.locations) step("stage-locations","pin","Trip Locations",TRIP.locations.decided?"Decided":"Vote",0);
   if(D||dn) step("stage-dates","dates","Trip Dates",D&&D.decided?"Decided":dn+(dn===1?" Option":" Options"),D&&D.decided?0:unrated("dates"));
   if(L.length) step("stage-lodging","stay","Lodging",open?open+" to Decide":"All Booked",unrated("lodging"));
   step("eats","mid",TRIP.spotsTitle||"Eats & Events",spotsN(),0);
@@ -753,10 +774,25 @@ function renderStages(){
   if(H){ H.hidden=S.hidden; H.textContent=TRIP.spotsTitle||"Eats & Events"; H.appendChild(el("small",null,spotsN())) }
   if(S.hidden) return;
   if(!me) S.appendChild(el("p","callout","Pick your name in the bar above to start voting. Everyone's votes show on each card."));
+  const LO=TRIP.locations;
+  if(LO){   // where the trip goes: each region with its stays and what it's known for
+    const s=el("section","stage"); s.id="stage-locations";
+    const h=el("h2","stage-h","Trip Locations"); h.appendChild(el("small",null,LO.decided?"Decided":"Vote")); offTag(h,"locations"); s.appendChild(h);
+    if(LO.decided) s.appendChild(el("p","decided",LO.decided));
+    if(LO.note) s.appendChild(el("p","stage-note",LO.note));
+    const ul=el("ul","lodges");
+    REGIONS.forEach(r=>{ const li=el("li","lodge place"), b=el("div","lodge-b"), w=when(r), top=el("p","lodge-top");
+      top.appendChild(el("b",null,r)); if(w) top.appendChild(el("span","lodge-n"," · "+w.days+(w.days==="1.0"?" Day":" Days")));
+      b.appendChild(top); if(w) b.appendChild(whenLines(w));
+      const known=(TRIP.knownFor||{})[r]; if(known&&known.length) b.appendChild(el("p","note","Known for "+known.join(", ")));
+      li.appendChild(b); ul.appendChild(li) });
+    s.appendChild(ul);
+    const lo=OPTS.filter(i=>i.stage==="locations"); if(lo.length){ const g=el("div","grid"); lo.forEach(i=>g.appendChild(card(i))); s.appendChild(g) }
+    S.appendChild(s) }
   const D=TRIP.dates, dOpts=OPTS.filter(i=>i.stage==="dates");
   if(D||dOpts.length){
     const s=el("section","stage"); s.id="stage-dates";
-    const h=el("h2","stage-h","Trip Dates"); h.appendChild(el("small",null,D&&D.decided?"Decided":"Vote")); s.appendChild(h);
+    const h=el("h2","stage-h","Trip Dates"); h.appendChild(el("small",null,D&&D.decided?"Decided":"Vote")); offTag(h,"dates"); s.appendChild(h);
     if(D&&D.decided) s.appendChild(el("p","decided",D.decided));
     if(D&&D.note) s.appendChild(el("p","stage-note",D.note));
     if(D&&D.decided&&Array.isArray(D.rows)&&D.rows.length){
@@ -771,7 +807,7 @@ function renderStages(){
   if(L.length){
     const s=el("section","stage"); s.id="stage-lodging";
     const booked=L.filter(x=>x.status==="booked").length, open=L.length-booked;
-    const h=el("h2","stage-h","Lodging"); h.appendChild(el("small",null,[booked?booked+" Booked":"",open?open+" to Decide":""].filter(Boolean).join(" · "))); s.appendChild(h);
+    const h=el("h2","stage-h","Lodging"); h.appendChild(el("small",null,[booked?booked+" Booked":"",open?open+" to Decide":""].filter(Boolean).join(" · "))); offTag(h,"lodging"); s.appendChild(h);
     const ul=el("ul","lodges");
     L.forEach(x=>{ const li=el("li","lodge"+(x.status==="booked"?" booked":" open")), b=el("div","lodge-b"), top=el("p","lodge-top");
       li.appendChild(el("span","lodge-st",x.status==="booked"?"Booked":"To Decide"));
@@ -811,16 +847,15 @@ function mountBallot(){
     +'<button type="button" class="lock" id="lock" title="Forget the password on this device">Lock</button></div>'
     +'<h1 id="title"></h1><p id="intro"></p><nav class="steps" id="steps" aria-label="The votes" hidden></nav>'
     +'<details class="sugs" id="sugs" hidden><summary></summary><ul class="sugs-l" aria-live="polite"></ul></details><div class="banner" id="setupBanner" hidden></div></header>'
-    +'<div class="bar"><div class="bar-in"><div class="who" id="whoWrap"><span class="label">I am</span><div class="chips" id="who"></div></div>'
+    +'<div class="bar" id="bar"><div class="bar-in"><div class="bar-row"><div class="who" id="whoWrap"><span class="label">I am</span><div class="chips" id="who"></div></div>'
     +'<div class="bar-r"><div class="counts"><span id="mine"></span><span class="status" id="status"></span></div>'
-    +'<button type="button" class="sugg-btn" id="suggestBtn">'+icon("plus")+'Suggest Spot</button></div></div>'
+    +'<button type="button" class="sugg-btn" id="suggestBtn">'+icon("plus")+'Suggest Spot</button>'
+    +'<button type="button" class="gear" id="gear" aria-label="Settings" title="Settings: sections, colors, prices, scoring">'+icon("gear")+'</button></div></div>'
+    +'<div class="bar-row bar-tools"><div class="seg" id="sort" role="group" aria-label="Sort"><button type="button" data-s="region">Region</button><button type="button" data-s="rank">Ranking</button></div>'
+    +'<div class="filters" id="filters" role="group" aria-label="Show"></div></div></div>'
     +'<div class="progress" aria-hidden="true"><i id="progress"></i></div></div>'
     +'<div class="stages" id="stages" hidden></div>'
     +'<section class="eats" id="eats"><h2 class="stage-h" id="eatsH" hidden></h2><nav class="jump" id="jump" aria-label="Jump to"></nav><section class="board" id="board" aria-label="Scoreboard"></section></section>'
-    +'<div class="tools"><div class="seg" id="sort" role="group" aria-label="Sort"><button type="button" data-s="region">Region</button><button type="button" data-s="rank">Ranking</button></div>'
-    +'<div class="filters" id="filters" role="group" aria-label="Show"></div><div class="legend"><span class="key"><i class="k3"></i>Must 3<i class="k2"></i>I want 2<i class="k1"></i>Meh 1<i class="k0"></i>Nah 0</span>'
-    +'<button type="button" class="cbt" id="cbt" aria-pressed="false" title="Blue to orange instead of green to red"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>Color-blind colors</button>'
-    +'<div class="seg cur" id="cur" role="group" aria-label="Prices in"><button type="button" data-c="usd">USD</button><button type="button" data-c="local"></button></div></div></div>'
     +'<main class="list" id="list"></main>'
     +'<div class="toast" id="toast" role="status" aria-live="polite"></div>';
   document.body.appendChild(v);
@@ -837,16 +872,76 @@ function mountBallot(){
   FILTERS.forEach(([f,label])=>{ if(f in has&&!has[f]) return; const b=el("button","chip"); b.innerHTML=icon(FILTER_ICON[f]); b.appendChild(document.createTextNode(label)); b.type="button"; b.dataset.f=f;
     if(f==="todo"){ const c=el("span","cnt"); c.id="todoCount"; c.hidden=true; b.appendChild(c) }   // how many you haven't rated
     F.appendChild(b) });
-  F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; syncTools(); render() });
-  $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render() });
+  F.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; filter=b.dataset.f; syncTools(); render(); toEats() });
+  $("#sort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; sortMode=b.dataset.s; ls("sort",sortMode); syncTools(); render(); toEats() });
+  $("#gear").addEventListener("click",openSettings);
+  // Anchored sections stop just under the bar, whatever height it wraps to.
+  const bar=$("#bar"), barH=()=>document.documentElement.style.setProperty("--bar-h",bar.offsetHeight+"px");
+  barH(); if("ResizeObserver" in window) new ResizeObserver(barH).observe(bar);
   $("#lock").addEventListener("click",()=>{ ls("code",null); ls("me",null); location.reload() });
   $("#suggestBtn").addEventListener("click",()=>openSuggest("spot"));
-  $('#cur [data-c="local"]').textContent=TRIP.currency||"JPY";
-  $("#cur").addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&b.dataset.c!==cur) setCur(b.dataset.c) });
-  document.querySelectorAll("#cur button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.c===cur)));
   let cb=false; try{ cb=localStorage.getItem("gv-cb")==="1" }catch(e){}
-  setCb(cb); $("#cbt").addEventListener("click",()=>setCb(!document.documentElement.classList.contains("cb"),true));
+  setCb(cb);
   syncTools();
+}
+// After a sort or filter change: the places from the top, just under the bar.
+function toEats(){ const e=$("#eats"), b=$("#bar"); if(!e) return;
+  const y=Math.max(0,e.getBoundingClientRect().top+scrollY-(b?b.offsetHeight:0)-8); if(Math.abs(scrollY-y)>4) window.scrollTo({top:y,behavior:REDUCED?"auto":"smooth"}) }
+// Settings (the gear in the bar): the sections, then this device's colors and prices, then how scoring works. Flipping a
+// section changes everyone's ballot, so it asks first.
+function openSettings(){
+  if(document.querySelector(".sg")) return;
+  const from=document.activeElement, d=el("div","sg"), c=el("div","sg-card set");
+  d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true"); d.setAttribute("aria-labelledby","setTitle"); c.tabIndex=-1; d.appendChild(c);
+  const h=el("h2",null,"Settings"); h.id="setTitle"; c.appendChild(h);
+  c.appendChild(el("p","sg-l","Sections"));
+  c.appendChild(el("p","sg-help","On: our picks plus everyone's suggestions. Off: suggestions only, so our picks are hidden there and our agent stops adding to it (suggestions still get looked up). This changes the page for everyone."));
+  const list=el("ul","set-l"), picks=k=>ALL.filter(i=>(i.stage||i.group||"")===k&&aiPick(i)).length;
+  SECT.forEach(([k,label])=>{ const li=el("li","set-row"), on=secOn(k), n=picks(k), t=el("div","set-txt");
+    t.append(el("b",null,label),el("small",null,n?n+(n===1?" Pick":" Picks"):"No Picks"));
+    const sw=el("button","switch"); sw.type="button"; sw.dataset.k=k; sw.setAttribute("role","switch"); sw.setAttribute("aria-checked",String(on));
+    sw.setAttribute("aria-label",label+": our picks "+(on?"on":"off")); sw.appendChild(el("span","switch-t",on?"On":"Off"));
+    sw.onclick=()=>ask(li,k,label,!on,n); li.append(t,sw); list.appendChild(li) });
+  c.appendChild(list);
+  function ask(li,k,label,on,n){
+    if(!me){ close(); return nudgeWho() }
+    list.querySelectorAll(".set-ask").forEach(x=>x.remove());
+    const a=el("li","set-ask"), p=el("p",null,on?"Turn our picks back on in "+label+"?"+(n?" "+n+(n===1?" spot returns":" spots return")+" to everyone's ballot, votes and all.":"")
+      :"Turn off our picks in "+label+"?"+(n?" This hides "+n+(n===1?" spot":" spots")+" from everyone's ballot; their votes are kept and come back if it's turned on again.":"")+" Only suggestions will show there.");
+    const no=el("button","sg-cancel","Cancel"), yes=el("button","sg-go",on?"Turn On":"Turn Off"), row=el("div","sg-row"); no.type=yes.type="button";
+    no.onclick=()=>a.remove();
+    yes.onclick=async()=>{ yes.disabled=true;
+      const j=await post(tripPath+"/sections",{code,name:me,section:k,on});
+      if(j&&j.ok){ close(); setSugs(j.suggestions||SUGS); await reloadTrip(); toast(label+(on?": our picks are on":": suggestions only")) }
+      else if(j&&j.error==="code") lockOut(CHANGED);
+      else { yes.disabled=false; p.textContent="Couldn't change that. Try again in a moment." } };
+    row.append(no,yes); a.append(p,row); li.after(a); yes.focus() }
+  c.appendChild(el("p","sg-l","Group Tastes"));   // the same dialog as the comment button by each Group Tastes heading
+  const gt=el("div","set-disp"), gb=el("button","tx-b"); gb.type="button"; gb.id="setTastes"; gb.innerHTML=icon("comment");
+  gb.appendChild(document.createTextNode("See or Add to Group Tastes")); gb.onclick=()=>{ close(); openSuggest("taste") };
+  gt.appendChild(gb); c.appendChild(gt);
+  c.appendChild(el("p","sg-l","On This Device"));
+  const disp=el("div","set-disp"), cbt=el("button","cbt"); cbt.type="button"; cbt.id="cbt"; cbt.title="Blue to orange instead of green to red";
+  cbt.innerHTML='<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>';
+  cbt.appendChild(document.createTextNode("Color-blind colors")); cbt.setAttribute("aria-pressed",String(document.documentElement.classList.contains("cb")));
+  cbt.onclick=()=>setCb(!document.documentElement.classList.contains("cb"),true);
+  const seg=el("div","seg cur"); seg.id="cur"; seg.setAttribute("role","group"); seg.setAttribute("aria-label","Prices in");
+  [["usd","USD"],["local",TRIP.currency||"JPY"]].forEach(([k,t])=>{ const b=el("button",null,t); b.type="button"; b.dataset.c=k; b.setAttribute("aria-pressed",String(cur===k)); seg.appendChild(b) });
+  seg.onclick=e=>{ const b=e.target.closest("button"); if(b&&b.dataset.c!==cur) setCur(b.dataset.c) };
+  disp.append(cbt,el("span","set-lbl","Prices In"),seg); c.appendChild(disp);
+  c.appendChild(el("p","sg-l","How Scoring Works"));
+  const lg=el("div","set-key"); lg.innerHTML='<span class="key"><i class="k3"></i>Must 3<i class="k2"></i>I want 2<i class="k1"></i>Meh 1<i class="k0"></i>Nah 0</span>'; c.appendChild(lg);
+  c.appendChild(el("p","sg-help","A card's total adds up everyone's points, and Ranking sorts by it. The total's color is the average vote; a Tabelog score's color is its rank within its own region (3.5+ is very good, 3.8+ exceptional)."));
+  const r=el("div","sg-row"), x=el("button","sg-cancel","Close"); x.type="button"; x.onclick=close; r.appendChild(x); c.appendChild(r);
+  document.body.appendChild(d); document.body.classList.add("lb-open");
+  function close(){ d.remove(); document.body.classList.remove("lb-open"); removeEventListener("keydown",onKey,true); if(from&&from.focus) from.focus({preventScroll:true}) }
+  function onKey(e){
+    if(e.key==="Escape"){ e.preventDefault(); close() }
+    else if(e.key==="Tab"){ const fs=[...d.querySelectorAll("button:not([disabled])")], i=fs.indexOf(document.activeElement);
+      if(e.shiftKey&&i<=0){ e.preventDefault(); fs[fs.length-1].focus() } else if(!e.shiftKey&&i===fs.length-1){ e.preventDefault(); fs[0].focus() } }
+  }
+  addEventListener("keydown",onKey,true); d.addEventListener("click",e=>{ if(e.target===d) close() });
+  c.focus({preventScroll:true});
 }
 // Prices: notes are written in USD (at the trip's "fx" yen per dollar, 150 by default). The switch shows them in the
 // local currency instead, rounded like Tabelog's price bands (¥500 steps from ¥1,000, ¥1,000 steps from ¥10,000), so

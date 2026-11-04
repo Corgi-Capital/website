@@ -18,11 +18,11 @@ Parameters:
     Type: String
     Default: group-vote
     Description: Parameter Store prefix. /<prefix>/maps-api-key holds the Google Maps browser key and /<prefix>/claude-oauth-token the agent's Claude credential (a claude setup-token OAuth token, or an API key), both SecureString. Standard parameters are free; Secrets Manager charges $0.40 a month per secret.
-  AgentAuth:
+  AgentHold:
     Type: String
-    Default: subscription
-    AllowedValues: [subscription, api]
-    Description: subscription (the credential is the owner's Claude subscription, so only the owner's own suggestions run at once and anyone else's wait for the owner's OK) or api (an API key, so everyone's suggestions run)
+    Default: none
+    AllowedValues: [none, owner]
+    Description: none (every traveler's suggestion runs at once; the owner pre-approves them as their own) or owner (anyone else's wait for the owner's OK on a device opened with the owner link)
   ClaudeCodeVersion:
     Type: String
     Default: 2.1.317
@@ -58,7 +58,7 @@ Resources:
         Variables:
           TABLE_NAME: !Ref VotesTable
           MAPS_PARAM: !Sub "/${ParamPrefix}/maps-api-key"
-          AGENT_AUTH: !Ref AgentAuth
+          AGENT_HOLD: !Ref AgentHold
           PHOTO_MONTHLY_LIMIT: !Ref PhotoMonthlyLimit
           SEARCH_MONTHLY_LIMIT: !Ref SearchMonthlyLimit
           AGENT_FUNCTION: !Ref AgentFunction
@@ -95,7 +95,7 @@ Resources:
           TABLE_NAME: !Ref VotesTable
           MAPS_PARAM: !Sub "/${ParamPrefix}/maps-api-key"
           CLAUDE_PARAM: !Sub "/${ParamPrefix}/claude-oauth-token"
-          AGENT_AUTH: !Ref AgentAuth
+          AGENT_HOLD: !Ref AgentHold
           CLAUDE_CODE_VERSION: !Ref ClaudeCodeVersion
           CLAUDE_CODE_SHA512: !Ref ClaudeCodeSha512
           CLAUDE_MODEL: sonnet

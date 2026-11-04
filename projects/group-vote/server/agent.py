@@ -5,8 +5,7 @@ its own review. For each suggestion it:
   1. resolves Google Maps links (short links redirect to a URL with the place's name and coordinates) and asks Google
      Places for up to three candidates;
   2. runs Claude Code headless with only WebSearch and WebFetch, on the credential in Parameter Store: the owner's Claude
-     subscription (an OAuth token from claude setup-token; it only runs what the owner sent or OKed, see app._suggest)
-     or an API key (sk-ant-api...), to pin down the place, read its Tabelog page and write the
+     subscription (an OAuth token from claude setup-token) or an API key (sk-ant-api...), to pin down the place, read its Tabelog page and write the
      card like the others, or turn it down (already listed, closed, outside the trip's regions, can't tell which);
   3. checks every field of the reply, gives the card an id and appends it to the trip with a conditional write on the
      trip's revision, so two agents never overwrite each other. The suggestion's row records the outcome for the page.
@@ -160,7 +159,7 @@ def run_claude(prompt, system=SYSTEM, tools="WebSearch,WebFetch", timeout=420):
         os.makedirs(d, exist_ok=True)
     keep = ("PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "LOCALAPPDATA", "APPDATA", "USERPROFILE", "CLAUDE_CODE_GIT_BASH_PATH")
     env = {k: os.environ[k] for k in keep if k in os.environ}   # no AWS credentials in Claude's environment
-    cred = _oauth_token()   # a subscription token, or an API key once the trip moves to one (then set AgentAuth=api)
+    cred = _oauth_token()   # a subscription token, or an API key (sk-ant-api...)
     env.update({"HOME": home, "CLAUDE_CONFIG_DIR": os.path.join(home, ".claude"), "TMPDIR": os.path.join(WORK, "tmp"),
                 ("ANTHROPIC_API_KEY" if cred.startswith("sk-ant-api") else "CLAUDE_CODE_OAUTH_TOKEN"): cred,
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
@@ -458,6 +457,9 @@ def discover(trip, row):
     """Finds up to 3 new spots for the updated Group Tastes and queues each as a suggestion from the commenter."""
     meta = app._meta(trip)
     page = app._page(trip, meta)
+    if not (page.get("sections") or {}).get("tastes", True):   # Group Tastes is suggestions only: the agent adds nothing
+        print(json.dumps({"trip": trip, "discover": "skipped: Group Tastes is suggestions only"}))
+        return []
     spots = _spots(page)
     listed = "\n".join(f"{i.get('place', '')} | {i.get('r', '')}, {i.get('area', '')}" for i in spots)
     by_id = {i.get("id"): i for i in spots}
@@ -532,6 +534,8 @@ def process(trip, sid):
             if found and "Hokkaido" in found[0]["address"]:
                 item["placeId"] = found[0]["placeId"]
         item.update(suggestedBy=row.get("by", ""), suggested=int(time.time()))
+        if row.get("origin") == "tastes":   # the agent's own find (after a Group Tastes comment): one of our picks
+            item["found"] = True
         if row.get("why"):
             item["why"] = row["why"]
         new, dup = append_item(trip, item)

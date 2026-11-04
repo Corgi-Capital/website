@@ -52,7 +52,16 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 /* ---------- Sticky bar: who's voting and how far along ---------- */
 .bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:rgba(11,11,11,.88);-webkit-backdrop-filter:saturate(1.2) blur(12px);backdrop-filter:saturate(1.2) blur(12px);border-block:1px solid var(--line)}
-.bar-in{max-width:1200px;margin:0 auto;padding:15px max(16px,env(safe-area-inset-right,0px)) 15px max(16px,env(safe-area-inset-left,0px));display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px}
+/* Two rows: who's voting, the count, Suggest Spot and Settings; then sort and the filters (one line, scrolls sideways). */
+.bar-in{max-width:1200px;margin:0 auto;padding:12px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));display:grid;gap:10px}
+.bar-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;min-width:0}
+.bar-tools{flex-wrap:nowrap;gap:10px}
+.bar-tools .seg{flex:none}
+.bar-tools .filters{flex:1 1 0;min-width:0}
+.gear{flex:none;display:inline-grid;place-items:center;width:40px;height:40px;padding:0;border:1px solid var(--gold-line);border-radius:50%;background:none;color:var(--gold-2)}
+.gear .ic{width:19px;height:19px}
+.gear:hover{border-color:var(--gold);background:var(--gold-wash)}
+@media (max-width:640px){.bar-row .bar-r{flex:1 1 100%;gap:10px;margin-left:0}.bar-row .counts{margin-right:auto}}   /* phones: names, then count, Suggest and Settings */
 .who .chip{min-height:40px;padding:7px 17px;font-size:15px}
 .who{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-radius:999px}
 .who.nudge{animation:gvNudge .9s ease 2}
@@ -69,8 +78,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .progress{height:2px}
 .progress i{display:block;width:0;height:100%;background:var(--gold);transition:width .35s ease}
 
-/* ---------- Tools: sort, filters, vote key ---------- */
-.tools{max-width:1200px;margin:0 auto;padding:18px max(16px,env(safe-area-inset-right,0px)) 2px max(16px,env(safe-area-inset-left,0px));display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+/* ---------- Sort, filters (in the bar); vote key, colors and prices (in Settings) ---------- */
 .seg{display:inline-flex;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2)}
 .seg button{min-height:30px;padding:4px 16px;border:0;border-radius:999px;background:none;color:var(--muted);font-size:14px}
 .seg button[aria-pressed="true"]{background:var(--ink);color:#0b0b0b;font-weight:700}
@@ -89,13 +97,12 @@ button{font:inherit;color:inherit;cursor:pointer}
 .cbt svg{width:13px;height:13px;flex:none}
 .cbt:hover{border-color:var(--gold-line);color:var(--ink)}
 .cbt[aria-pressed="true"]{border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2)}
-@media (max-width:640px){.legend{margin-left:0}.filters{flex:1 1 100%}}
+
 
 /* ---------- Trip Dates and Lodging, then the places' own heading ---------- */
 .stages{max-width:1200px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px))}
 .stages[hidden]{display:none}
-.stage,.eats{scroll-margin-top:110px}
-@media (max-width:640px){.stage,.eats{scroll-margin-top:150px}}
+.stage,.eats{scroll-margin-top:calc(var(--bar-h,120px) + 12px)}
 .stage-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:38px 0 6px;font:600 clamp(34px,4.6vw,44px)/1.05 var(--display)}
 .stage-h[hidden]{display:none}
 .stage-h small{font:400 12px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--gold-dim)}
@@ -122,13 +129,35 @@ button{font:inherit;color:inherit;cursor:pointer}
 .lodge-name a:hover{border-color:var(--gold)}
 @media (max-width:480px){.lodge{flex-direction:column;gap:4px}.lodge-st{width:auto;padding:0}}
 .lead{margin:-6px 0 12px}
+.lodge.place .lodge-b{gap:2px}
+.lodge.place .when{margin:0}
+/* A section whose picks are off: suggestions only. */
+.off-tag{display:inline-block;margin-left:10px;padding:2px 9px;border:1px solid var(--gold-line);border-radius:999px;font:500 10.5px/1.5 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--gold-2);vertical-align:middle}
+.stage-h .off-tag{align-self:center}
+/* Settings */
+.set .sg-l{margin-top:18px}
+.set-l{margin:4px 0 0;padding:0;list-style:none}
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
+.set-row:first-child{border-top:0}
+.set-txt{display:grid;gap:1px;min-width:0}
+.set-txt b{font-weight:500}
+.set-txt small{color:var(--faint);font:400 11.5px var(--mono);letter-spacing:.06em}
+.switch{position:relative;flex:none;display:inline-flex;align-items:center;justify-content:flex-end;width:66px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.switch::before{content:"";position:absolute;left:4px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--faint);transition:transform .2s}
+.switch[aria-checked="true"]{justify-content:flex-start;border-color:var(--gold);background:var(--gold-wash);color:var(--gold-2)}
+.switch[aria-checked="true"]::before{transform:translateX(34px);background:var(--gold)}
+.set-ask{margin:0 0 6px;padding:12px;border:1px solid var(--gold-line);border-radius:10px;background:var(--gold-wash);font-size:13.5px;line-height:1.55}
+.set-ask p{margin:0}
+.set-disp{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.set-lbl{margin-left:4px;font:400 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.set-key{margin:6px 0 2px}
+@media (prefers-reduced-motion:reduce){.switch::before{transition:none}}
 .eats{max-width:1200px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px))}
 .eats>.stage-h{margin-top:30px}
 
 /* ---------- Regions ---------- */
 .list{max-width:1200px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) max(40px,calc(env(safe-area-inset-bottom,0px) + 24px)) max(16px,env(safe-area-inset-left,0px))}
-.region{scroll-margin-top:110px}
-@media (max-width:640px){.region{scroll-margin-top:150px}}   /* the sticky bar takes two rows on phones */
+.region{scroll-margin-top:calc(var(--bar-h,120px) + 12px)}   /* --bar-h: the sticky bar's height, set by the page */
 .sec{display:flex;align-items:baseline;gap:12px;margin:34px 0 4px;font:600 34px/1.1 var(--display)}
 .sec small{font:400 12px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--gold-dim)}
 .known{margin:0 0 6px;max-width:72ch;color:var(--muted);font:italic 400 19px/1.4 var(--display)}
@@ -268,7 +297,7 @@ body.lb-open{overflow:hidden}
 /* ---------- Region timing, section notes, currency ---------- */
 .when{margin:2px 0 8px;font:400 12px/1.8 var(--mono);letter-spacing:.03em;color:var(--gold-dim)}
 /* Dates bright and bold, times gold, so "2/19" and "1PM" read apart; a stay never breaks across lines. */
-.when .stay{white-space:nowrap}
+.when .stay{display:block;white-space:nowrap}   /* each stay on its own line */
 .when .w{color:var(--muted)}
 .when .d{color:var(--ink);font-weight:600}
 .when .t{color:var(--gold)}
