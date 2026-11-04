@@ -1038,16 +1038,21 @@ const hasStages=()=>!!(TRIP.locations||TRIP.dates||(TRIP.lodging||[]).length||OP
 // Locked in Settings (anyone, for everyone), or else settled by the trip itself. A locked part takes no suggestions.
 const settled=k=>TRIP.locks&&k in TRIP.locks?!!TRIP.locks[k]:k==="locations"?!!(TRIP.locations&&TRIP.locations.decided):k==="dates"?!!(TRIP.dates&&TRIP.dates.decided)
   :k==="lodging"?(TRIP.lodging||[]).length>0&&(TRIP.lodging||[]).every(x=>x.status==="booked"):false;
-// A person's flights in short: each journey (legs that connect) as its date, departure time and airports, like
-// "2/18 12:55a JFK · HND · CTS". Legs without airport codes fall back to the flight numbers.
+// A person's flights in short: each journey (legs that connect) as its date and departure time, like "2/18 12:55 AM",
+// and its airports (JFK, HND, CTS). Legs without airport codes fall back to the flight numbers.
 const MONTHS="JanFebMarAprMayJunJulAugSepOctNovDec";
 function flightLine(legs){
-  if(!legs.every(l=>l.from&&l.to)) return [legs.map(l=>l.flight).join(" · ")];
+  if(!legs.every(l=>l.from&&l.to)) return [{when:"",ports:legs.map(l=>l.flight)}];
   const out=[]; let cur=null;
-  legs.forEach(l=>{ if(cur&&cur.to===l.from) { cur.ports.push(l.to); cur.to=l.to } else { cur={first:l,ports:[l.from,l.to],to:l.to}; out.push(cur) } });
+  // A leg continues the journey when it leaves from where the last one landed, within a day; else a new one starts
+  // (the way home leaves from where the way out landed, days later).
+  const day=l=>{ const d=/([A-Z][a-z]{2})\s+(\d{1,2})/.exec(l.date||""); return d&&MONTHS.indexOf(d[1])>=0?Date.UTC(+TRIP.year||2000,MONTHS.indexOf(d[1])/3,+d[2])/864e5:null };
+  legs.forEach(l=>{ const dd=day(l);
+    if(cur&&cur.to===l.from&&dd!=null&&cur.day!=null&&dd-cur.day<=1){ cur.ports.push(l.to); cur.to=l.to; cur.day=dd }
+    else { cur={first:l,ports:[l.from,l.to],to:l.to,day:dd}; out.push(cur) } });
   return out.map(j=>{ const d=/([A-Z][a-z]{2})\s+(\d{1,2})/.exec(j.first.date||""), t=/(\d{1,2}:\d\d)\s*([AP])M/i.exec(j.first.times||"");
     const md=d&&MONTHS.indexOf(d[1])>=0?(MONTHS.indexOf(d[1])/3+1)+"/"+d[2]:(j.first.date||"");
-    return [md,t?t[1]+t[2].toLowerCase():"",j.ports.join(" · ")].filter(Boolean).join(" ") });
+    return {when:[md,t?t[1]+" "+t[2].toUpperCase()+"M":""].filter(Boolean).join(" "), ports:j.ports} });
 }
 // "Suggestions Only" on a section's heading while its AI picks are off; not on a settled part, which takes none.
 function offTag(h,k){ if(k&&!secOn(k)&&!settled(k)){ const t=el("span","off-tag","Suggestions Only"); t.title="AI picks are off here: only the group's suggestions show"; h.appendChild(t) } return h }
@@ -1147,7 +1152,11 @@ function renderStages(){
       const F=D.flights||{}, who=D.rows.map(r=>r[0]).filter(n=>Array.isArray(F[n])&&F[n].length);
       if(who.length){ const fl=el("div","flights"); fl.appendChild(el("p","sg-l","Flights"));
         who.forEach(n=>{ const d=el("details","fp"+(n===me?" me":"")), sm=el("summary"), ol=el("ol","fp-l"); d.dataset.who=n;
-          sm.append(el("b",null,n)); flightLine(F[n]).forEach(t=>sm.appendChild(el("span","fp-nums",t)));
+          sm.appendChild(el("b",null,n)); const js=el("span","fp-js");
+          flightLine(F[n]).forEach(j=>{ const c=el("span","fp-j"); if(j.when) c.appendChild(el("span","fp-when",j.when));
+            j.ports.forEach((p,i)=>{ if(i) c.appendChild(el("i","fp-dot","·")); c.appendChild(el("span","fp-port",p)) });
+            c.setAttribute("aria-label",(j.when?j.when+", ":"")+j.ports.join(j.when?" to ":", ")); js.appendChild(c) });
+          sm.appendChild(js);
           F[n].forEach(l=>{ const li=el("li"), top=el("div","fp-top"); top.append(el("b",null,l.flight),el("span",null,l.date)); li.appendChild(top);
             li.append(el("div","fp-rt",l.route),el("div","fp-tm",l.times)); if(l.note) li.appendChild(el("div","fp-note",l.note)); ol.appendChild(li) });
           d.append(sm,ol); fl.appendChild(d) });

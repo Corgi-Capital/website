@@ -204,7 +204,17 @@ button{font:inherit;color:inherit;cursor:pointer}
 .fp[open] summary::after{margin-bottom:-3px;transform:rotate(225deg)}
 .fp summary b{font:600 15px var(--body)}
 .fp.me summary b{color:var(--gold)}
-.fp-nums{color:var(--muted);font:400 12.5px var(--mono);letter-spacing:.04em;white-space:nowrap}
+/* Each journey a gilt-edged pill: the date and time in gold, then the airports with gold dots between. */
+.fp-js{display:flex;flex-wrap:wrap;gap:6px}
+/* The name, the journeys and the arrow on one line; on a phone the journeys go under the name, the arrow stays up top. */
+.fp summary{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px 12px}
+.fp summary::after{grid-column:3;grid-row:1;justify-self:end;margin:0 2px 3px}
+@media (max-width:640px){.fp-js{grid-column:1/-1;grid-row:2}}
+.fp-j{display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border:1px solid var(--gold-line);border-radius:999px;background:var(--gold-wash);font:500 12px/1.3 var(--mono);white-space:nowrap}
+.fp-when{margin-right:3px;color:var(--gold-2);font-weight:600;letter-spacing:.02em}
+.fp-port{color:var(--ink);letter-spacing:.08em}
+.fp-dot{color:var(--gold);font-style:normal}
+.fp.me .fp-j{border-color:var(--gold)}
 .fp-l{margin:0;padding:0 14px 6px;list-style:none}
 .fp-l li{padding:10px 0;border-top:1px solid var(--line)}
 .fp-top{display:flex;align-items:baseline;gap:10px}
