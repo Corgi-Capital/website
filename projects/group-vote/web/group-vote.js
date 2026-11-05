@@ -340,8 +340,8 @@ function openCategories(){
 // one for its card). Google's map loads only when this page opens, counted against the month's map budget; the
 // places' coordinates come from the server, which looks each up once and keeps it up to 25 days (TRIP.map: points,
 // legs, center, zoom).
-let tripMap=null, mapBusy=false, mapPop=null, mapView=ls("mapview")||"all";
-const mapLayers={route:[], dots:[]}, mapOff={route:false, cats:{}}, mapBox={}, mapLabels=[];   // mapBox: each region's bounds
+let tripMap=null, mapBusy=false, mapPop=null, mapView=ls("mapview")||"all", mapAll=[], mapFitted=null;   // mapAll: the whole trip's frame (the route and stays); mapFitted: the last fit, until the map is moved by hand
+const mapLayers={route:[], dots:[]}, mapOff={route:false, cats:{}}, mapLabels=[], mapPlaces=[];   // mapPlaces: each point, stay and spot ({at, r, kind}), to frame the views
 const WEEK=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 // "2/19 1PM - 2/21 12PM" as "Fri Feb 19 – Sun Feb 21", a single day as "Sat Feb 20": the map shows days, not times.
 function mapDays(s){
@@ -360,11 +360,15 @@ function mapPt(kind,name,lines,ic){
   tie.hidden=true; n.append(tie,el("i","map-anchor"),box); return n;
 }
 // Labels never sit on top of each other: after every move or zoom, each takes a place clear of the others and of every
-// point's dot, inside the map. A point's label tries places right around its dot, then the nearest clear place anywhere
-// in the map, tied back to its dot by a thin line that crosses no other dot or label; it hides only when the map has
-// no room left for it. A route's date tries places along its own line, and hides at a zoom with no room for it. Who
-// goes first decides the rest, so a few orders are tried (as listed, west to east, east to west, north to south, south
-// to north, the most crowded first) and the tidiest layout wins: fewest hidden, no crossings, shortest ties.
+// point's dot, inside the map, and off the spots' dots too when there's such a place close by (REACH px), so a zoomed-in
+// view shows its spots. A point's label tries places right around its dot, then the nearest clear place anywhere in the
+// map, tied back to its dot by a thin line that crosses no other dot or label; it hides only when the map has no room
+// left for it. A route's date tries places along its own line, and hides at a zoom with no room for it. Who goes first
+// decides the rest, so a few orders are tried (as listed, west to east, east to west, north to south, south to north,
+// the most crowded first) and the tidiest layout wins: fewest hidden, no crossings, fewest spots covered, shortest ties.
+// Stepping off the spots is only a wish: when every order that way costs a crossing or a hidden label, the orders are
+// tried again without it.
+const REACH=120;
 function mapDeclutter(){
   if(!tripMap) return;
   const t0=performance.now(), M=$("#tripMap").getBoundingClientRect(), pad=4, L0=M.left+pad, T0=M.top+pad, R0=M.right-pad, B0=M.bottom-pad;
@@ -395,28 +399,36 @@ function mapDeclutter(){
     if(dy){ const t=(q.t-g-y0)/dy, u=(q.b+g-y0)/dy; a=Math.max(a,Math.min(t,u)); b=Math.min(b,Math.max(t,u)) } else if(y0<q.t-g||y0>q.b+g) return false;
     return a<b };
   const end=(x,q)=>{ const nx=q.l>x.ax?q.l:q.r<x.ax?q.r:x.ax, ny=q.t>x.ay?q.t:q.b<x.ay?q.b:x.ay; return [nx,ny,Math.hypot(nx-x.ax,ny-x.ay)] };   // where its tie meets the label
-  const dots=L.filter(x=>x.dot).map(x=>x.dot);
-  const lay=order=>{ const placed=dots.slice(), ties=[], out=new Map(); let cost=0;
+  const dots=L.filter(x=>x.dot).map(x=>x.dot), spots=[];
+  $("#tripMap").querySelectorAll(".map-dot").forEach(d=>{ const r=d.getBoundingClientRect();   // the spots' dots in view, less their dark rims
+    if(r.width&&r.right>M.left&&r.left<M.right&&r.bottom>M.top&&r.top<M.bottom) spots.push({l:r.left+2,t:r.top+2,r:r.right-2,b:r.bottom-2}) });
+  const bare=q=>q.bare!==undefined?q.bare:(q.bare=!spots.some(p=>q.l<p.r&&q.r>p.l&&q.t<p.b&&q.b>p.t));   // covers no spot (a place's own answer, kept)
+  const lay=(order,soft)=>{ const placed=dots.slice(), ties=[], out=new Map(); let cost=0, bad=0;   // soft: off the spots where it can
     const free=q=>{ for(let i=0;i<placed.length;i++){ const p=placed[i]; if(q.l<p.r&&q.r>p.l&&q.t<p.b&&q.b>p.t) return false } return true };
     const cuts=q=>{ for(let i=0;i<ties.length;i++){ const s=ties[i]; if(hits(s[0],s[1],s[2],s[3],q,0)) return true } return false };   // across an earlier label's tie
     const crosses=(x,q)=>{ const [nx,ny,len]=end(x,q); if(len<=16) return false;
       for(let i=0;i<placed.length;i++){ const p=placed[i]; if(p!==x.dot&&hits(x.ax,x.ay,nx,ny,p,2)) return true } return false };
-    order.forEach(x=>{ const ok=q=>q.in&&free(q), neat=q=>q.in&&free(q)&&!cuts(q)&&!(x.shown&&crosses(x,q));
-      let c=x.cands.find(neat);
+    order.forEach(x=>{ const ok=q=>q.in&&free(q), neat=q=>q.in&&free(q)&&!cuts(q)&&!(x.shown&&crosses(x,q)), clear=q=>bare(q)&&neat(q);
+      let c=soft?x.cands.find(clear):null;
+      if(soft&&!c&&x.shown){ const F=far(x); for(let i=0;i<F.length&&F[i].k<=REACH&&!c;i++) if(clear(F[i])) c=F[i] }   // a little further, off the spots
+      c=c||x.cands.find(neat);
       if(!c&&x.shown){ const F=far(x); for(let i=0,n=Math.min(F.length,900);i<n&&!c;i++) if(neat(F[i])) c=F[i]; c=c||x.cands.find(ok)||F.find(ok) }
       if(!c&&x.leg) c=x.cands.find(ok);
-      if(!c&&!x.leg&&!x.shown) c=x.cands.find(free);   // a point just out of view: its label may hang off the edge
-      if(!c){ cost+=x.leg?150:x.shown?5000:0; return }
-      if(cuts(c)) cost+=400;
-      if(x.shown){ const [nx,ny,len]=end(x,c); if(len>16){ cost+=len+(crosses(x,c)?400:0); ties.push([x.ax,x.ay,nx,ny]) } }
+      if(!c&&!x.leg&&!x.shown) c=(soft&&x.cands.find(q=>free(q)&&bare(q)&&q.r>L0&&q.l<R0&&q.b>T0&&q.t<B0))||x.cands.find(free);   // a point just out of view: its label may hang off the edge
+      if(!c){ cost+=x.leg?150:x.shown?5000:0; if(x.shown) bad++; return }
+      if(cuts(c)){ cost+=400; bad++ }
+      if(!bare(c)) cost+=60;
+      if(x.shown){ const [nx,ny,len]=end(x,c); if(len>16){ const cr=crosses(x,c); cost+=len+(cr?400:0); bad+=cr; ties.push([x.ax,x.ay,nx,ny]) } }
       placed.push(c); out.set(x,c) });
-    return {out,cost} };
+    return {out,cost,bad} };
   const pts=L.filter(x=>!x.leg), legs=L.filter(x=>x.leg), by=f=>pts.slice().sort((a,b)=>f(a)-f(b));
   const crowd=x=>pts.filter(y=>y!==x&&Math.hypot(y.ax-x.ax,y.ay-x.ay)<150).length, seen=new Set();
   let best=null;
-  [by(x=>-(+x.o.node.style.zIndex||0)),by(x=>x.ax),by(x=>-x.ax),by(x=>x.ay),by(x=>-x.ay),by(x=>-crowd(x))].forEach(o=>{
-    const key=o.map(x=>pts.indexOf(x)).join(); if((best&&best.cost===0)||seen.has(key)) return; seen.add(key);
-    const r=lay(o.concat(legs)); if(!best||r.cost<best.cost) best=r });
+  const orders=[by(x=>-(+x.o.node.style.zIndex||0)),by(x=>x.ax),by(x=>-x.ax),by(x=>x.ay),by(x=>-x.ay),by(x=>-crowd(x))];
+  const run=soft=>orders.forEach(o=>{
+    const key=(soft?"s":"h")+o.map(x=>pts.indexOf(x)).join(); if((best&&best.cost===0)||seen.has(key)) return; seen.add(key);
+    const r=lay(o.concat(legs),soft); if(!best||r.cost<best.cost) best=r });
+  run(true); if(best.bad) run(false);
   L.forEach(x=>{ const c=best.out.get(x);
     if(!c){ x.n.style.visibility="hidden"; return }
     x.n.style.setProperty("--dx",c.dx+"px"); x.n.style.setProperty("--dy",c.dy+"px");
@@ -424,10 +436,40 @@ function mapDeclutter(){
       if(len>16){ x.tie.style.width=len+"px"; x.tie.style.transform="rotate("+Math.atan2(ny-x.ay,nx-x.ax)+"rad)"; x.tie.hidden=false } } });
   try{ performance.clearMeasures("gv-map-layout"); performance.measure("gv-map-layout",{start:t0}) }catch(e){}
 }
-// The views: the whole trip, then the trip's own (TRIP.map.views: a label, the region whose spots it shows, a center
-// and zoom), or else each region fitted to its spots.
-const mapViewList=()=>{ const vs=(TRIP.map&&TRIP.map.views)||[];
-  return vs.length?vs.map(v=>({v:v.label,label:v.label,r:v.r,center:v.center,zoom:v.zoom})):REGIONS.filter(r=>mapBox[r]).map(r=>({v:r,label:r,r})) };
+// The views: the whole trip, then one per town on the map (its points of kind region, each showing its region's spots),
+// or the trip's own (TRIP.map.views: a label, the region r whose spots it shows, a center, and a zoom only to pin one),
+// plus any region with spots but no town.
+const mapViewList=()=>{ const M=TRIP.map||{}, vs=M.views||[];
+  if(vs.length) return vs.map(v=>({v:v.label,label:v.label,r:v.r,at:v.center,zoom:v.zoom}));
+  const towns=Object.values(M.points||{}).filter(p=>(p.kind||"region")==="region"&&p.r).map(p=>({v:p.name,label:p.name,r:p.r,at:[p.lat,p.lng]}));
+  return towns.concat(REGIONS.filter(r=>!towns.some(t=>t.r===r)&&mapPlaces.some(x=>x.r===r&&x.kind==="spot")).map(r=>({v:r,label:r,r}))) };
+// A view's frame, where we'd walk: every spot, stay and point of its region within WALK km (about 15 minutes on foot) of
+// the town (or the view's center) or of where we stay there. So it follows where the spots are, a far village or a day
+// trip doesn't widen it, and a spot added later joins on its own. Two towns sharing a region each keep what's nearer to
+// them. With no spot that close, it reaches for the nearest one (or, with no town or stay, the busiest).
+const WALK=1.2, km=(a,b)=>111.32*Math.hypot(a[0]-b[0],(a[1]-b[1])*Math.cos((a[0]+b[0])*Math.PI/360));
+function mapFrame(v){
+  const twins=mapViewList().filter(w=>w.r===v.r&&w.v!==v.v&&w.at);
+  const xs=mapPlaces.filter(x=>x.r===v.r&&(!v.at||twins.every(w=>km(x.at,v.at)<=km(x.at,w.at)))), spots=xs.filter(x=>x.kind==="spot");
+  const seeds=xs.filter(x=>x.kind==="stay").map(x=>x.at).concat(v.at?[v.at]:[]);
+  const close=x=>seeds.some(s=>km(x.at,s)<=WALK), busy=a=>spots.filter(y=>km(y.at,a)<=WALK).length;
+  if(spots.length&&!spots.some(close)){ const c=seeds[0];
+    seeds.push((c?spots.slice().sort((a,b)=>km(a.at,c)-km(b.at,c))[0]:spots.reduce((a,b)=>busy(b.at)>busy(a.at)?b:a)).at) }
+  return seeds.concat(xs.filter(close).map(x=>x.at));
+}
+// Fits the map to these places as close as this screen allows, with room for the labels (above their dots) and Google's
+// buttons, and no closer than maxZ (street level for a view). Remembered so a resize (a phone turned, full screen) fits
+// again, until the map is moved by hand.
+function mapFit(pts,maxZ){
+  const box=$("#tripMap"), W=box.clientWidth, H=box.clientHeight; if(!tripMap||!W||!H||!pts.length) return;
+  const p=W<640?{t:48,b:24,l:28,r:28}:{t:64,b:32,l:56,r:56};
+  const X=a=>(a[1]+180)/360, Y=a=>{ const s=Math.sin(a[0]*Math.PI/180); return .5-Math.log((1+s)/(1-s))/(4*Math.PI) };   // Web Mercator, 0 to 1
+  const xs=pts.map(X), ys=pts.map(Y), x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  const z=Math.max(2,Math.min(maxZ,Math.log2(Math.min((W-p.l-p.r)/(x1-x0||1e-9),(H-p.t-p.b)/(y1-y0||1e-9))/256)));
+  const k=256*2**z, cx=(x0+x1)/2-(p.l-p.r)/2/k, cy=(y0+y1)/2-(p.t-p.b)/2/k;
+  tripMap.setOptions({center:{lat:Math.atan(Math.sinh(Math.PI*(1-2*cy)))*180/Math.PI,lng:cx*360-180},zoom:z});
+  mapFitted={z,w:W,h:H};
+}
 const MAP_COLORS=["#e2c88e","#5fc3ad","#e58a92","#8ab8e6","#c3a6e8","#f0a868","#a6d86e","#d9d2c4","#f2d16b","#7fd1e0","#e0a2c8","#b8c97a"];
 const MAP_STYLE=[{elementType:"geometry",stylers:[{color:"#161615"}]},{elementType:"labels.text.fill",stylers:[{color:"#8d877a"}]},
   {elementType:"labels.text.stroke",stylers:[{color:"#0b0b0b"}]},{featureType:"administrative",elementType:"geometry.stroke",stylers:[{color:"#3b352a"}]},
@@ -456,7 +498,7 @@ async function ensureMap(){
     if(!(r&&r.ok)){ mapBusy=false; if(r&&r.error==="code") return lockOut(CHANGED);
       return mapNote(r&&r.error==="limit"?"This month's map budget is used up. Each place's Google Maps button still works.":"Couldn't load the map. Try again in a moment.") }
     await mapsJs();
-    const {Map,OverlayView,Polyline}=await google.maps.importLibrary("maps"), {LatLng,LatLngBounds}=await google.maps.importLibrary("core");
+    const {Map,OverlayView,Polyline}=await google.maps.importLibrary("maps"), {LatLng}=await google.maps.importLibrary("core");
     let at={};
     for(let i=0;i<3;i++){ const g=await api(tripPath+"/map?code="+encodeURIComponent(code)); if(!(g&&g.ok)) break; at=g.points||{}; if(!g.left) break }
     class Pin extends OverlayView{
@@ -465,11 +507,10 @@ async function ensureMap(){
       draw(){ const p=this.getProjection().fromLatLngToDivPixel(this.pos); if(p){ this.node.style.left=p.x+"px"; this.node.style.top=p.y+"px" } }
       onRemove(){ this.node.remove() }
     }
-    const M=TRIP.map, P=M.points||{}, box=$("#tripMap"), bounds=new LatLngBounds(), core=new LatLngBounds();   // core: the route and stays
+    const M=TRIP.map, P=M.points||{}, box=$("#tripMap"), all=[], core=[];   // core: the route and stays
     tripMap=new Map(box,{center:{lat:(M.center||[43,141.2])[0],lng:(M.center||[43,141.2])[1]},zoom:M.zoom||8,styles:MAP_STYLE,backgroundColor:"#0b0b0b",
-      disableDefaultUI:true,zoomControl:true,fullscreenControl:true,gestureHandling:"cooperative",clickableIcons:false});
-    const put=(pos,node,z,r)=>{ const o=new Pin(pos,node,z); o.setMap(tripMap); bounds.extend({lat:pos[0],lng:pos[1]});
-      if(r) (mapBox[r]=mapBox[r]||new LatLngBounds()).extend({lat:pos[0],lng:pos[1]}); return o };
+      disableDefaultUI:true,zoomControl:true,fullscreenControl:true,gestureHandling:"cooperative",clickableIcons:false,isFractionalZoomEnabled:true});
+    const put=(pos,node,z,r,kind)=>{ const o=new Pin(pos,node,z); o.setMap(tripMap); all.push(pos); if(r&&kind) mapPlaces.push({at:pos,r,kind}); return o };
     // The route: each leg a curved gold line, an arrow along it, and its date halfway.
     (M.legs||[]).forEach(L=>{ const a=P[L.from], b=P[L.to]; if(!a||!b) return;
       const path=mapArc([a.lat,a.lng],[b.lat,b.lng],L.bend==null?.16:L.bend);
@@ -477,22 +518,25 @@ async function ensureMap(){
         icons:[{icon:{path:"M -2.6 2.2 L 0 -2.2 L 2.6 2.2",strokeColor:"#f0dcaa",strokeWeight:2,scale:1.4},offset:"58%"}]});
       mapLayers.route.push(line);
       const mid=path[16], lab=el("div","map-leg",L.when+(L.how?" · "+mapDur(L.how):"")), o=put([mid.lat,mid.lng],lab,6); o.path=path; mapLayers.route.push(o); mapLabels.push(o);
-      core.extend({lat:a.lat,lng:a.lng}); core.extend({lat:b.lat,lng:b.lng}) });
+      core.push([a.lat,a.lng],[b.lat,b.lng]) });
     // The regions and other named points (the airport, a stay without a Google place), with their dates.
     Object.values(P).forEach(p=>{ const w=p.r&&(TRIP.time||{})[p.r], lines=p.note?String(p.note).split(/\s+·\s+/):(Array.isArray(w)?w.map(mapDays):[]);
-      mapLabels.push(put([p.lat,p.lng],mapPt(p.kind||"region",p.name,lines),p.kind==="stay"?9:8,p.r)); core.extend({lat:p.lat,lng:p.lng}) });
+      mapLabels.push(put([p.lat,p.lng],mapPt(p.kind||"region",p.name,lines),p.kind==="stay"?9:8,p.r,p.kind||"region")); core.push([p.lat,p.lng]) });
     // Where we stay, by Google place.
     (TRIP.lodging||[]).forEach(x=>{ const c=x.placeId&&at[x.placeId]; if(!c) return;
-      mapLabels.push(put(c,mapPt("stay",x.name||x.where,[x.when||""],icon("stay")),9,REGIONS.includes(x.where)?x.where:"")); core.extend({lat:c[0],lng:c[1]}) });
+      mapLabels.push(put(c,mapPt("stay",x.name||x.where,[x.when||""],icon("stay")),9,REGIONS.includes(x.where)?x.where:"","stay")); core.push(c) });
     // Every spot, as a dot in its category's color; tap for its card.
     let shown=0;
     ITEMS.forEach(it=>{ const c=it.placeId&&at[it.placeId]; if(!c) return; shown++;
       const k=GROUPS.some(([g])=>g===it.group)?it.group:"", d=el("button","map-dot"); d.type="button"; d.style.background=catColor(k);
       d.dataset.id=it.id; d.setAttribute("aria-label",it.dish+", "+it.place); d.title=it.place;
-      mapLayers.dots.push({o:put(c,d,5,it.r),r:it.r,k}); d.onclick=()=>mapCard(it,c,Pin) });
-    mapBox.all=core.isEmpty()?bounds:core;   // Whole Trip frames the route and stays; outlying spots are a pan away
+      mapLayers.dots.push({o:put(c,d,5,it.r,"spot"),r:it.r,k}); d.onclick=()=>mapCard(it,c,Pin) });
+    mapAll=core.length?core:all;   // Whole Trip frames the route and stays; outlying spots are a pan away
     tripMap.addListener("click",()=>{ if(mapPop){ mapPop.setMap(null); mapPop=null } });
     tripMap.addListener("idle",()=>requestAnimationFrame(mapDeclutter));   // after every move or zoom
+    tripMap.addListener("dragstart",()=>{ mapFitted=null });   // moved by hand: a resize leaves it be
+    tripMap.addListener("zoom_changed",()=>{ if(mapFitted&&Math.abs(tripMap.getZoom()-mapFitted.z)>1e-6) mapFitted=null });
+    if(window.ResizeObserver) new ResizeObserver(()=>{ const f=mapFitted, w=box.clientWidth, h=box.clientHeight; if(f&&w&&h&&(w!==f.w||h!==f.h)) mapShow(true) }).observe(box);   // a phone turned, full screen: fit again (Google's own idle lays the labels out)
     mapViews(); mapLegend(); mapShow(true);
     mapNote(shown?"":"Places show once their spots are found on Google.");
   }catch(e){ tripMap=null; mapNote("Couldn't load Google's map. Try again in a moment.") }
@@ -510,15 +554,16 @@ function mapCard(it,c,Pin){
   mapPop=new Pin(c,n,10); mapPop.setMap(tripMap);
 }
 // What shows: the route unless it's switched off; a spot if its category is on and it's in the view (the whole trip,
-// or one region). fit: zoom to the view.
+// or one town's region). fit: frame the view.
 function mapShow(fit){
   if(!tripMap) return;
   mapLayers.route.forEach(o=>o.setMap(mapOff.route?null:tripMap));
   const cur=mapView==="all"?null:mapViewList().find(x=>x.v===mapView);
   mapLayers.dots.forEach(d=>d.o.setMap(!mapOff.cats[d.k]&&(!cur||d.r===cur.r)?tripMap:null));
   document.querySelectorAll("#mapViews button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===mapView)));
-  if(fit){ if(cur&&cur.center){ tripMap.setCenter({lat:cur.center[0],lng:cur.center[1]}); tripMap.setZoom(cur.zoom||13) }
-    else { const b=cur?mapBox[cur.r]:mapBox.all; if(b&&!b.isEmpty()) tripMap.fitBounds(b,cur?24:48) } }
+  if(fit){ mapFitted=null;
+    if(cur&&cur.at&&cur.zoom) tripMap.setOptions({center:{lat:cur.at[0],lng:cur.at[1]},zoom:cur.zoom});   // a pinned view
+    else mapFit(cur?mapFrame(cur):mapAll,cur?16:13) }
   requestAnimationFrame(mapDeclutter);
 }
 // The view buttons: Whole Trip, then the trip's views. The choice is remembered on this device.
